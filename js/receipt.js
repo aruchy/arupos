@@ -1,4 +1,4 @@
-import { formatRupiah, formatDateTime, escapeHtml } from './utils.js';
+import { formatRupiah, formatDateTime, escapeHtml, formatTransactionCode } from './utils.js';
 import { icon } from './icons.js';
 import { toast, openSheet, closeSheet, animatedSuccessCheckSvg, animateRupiah } from './motion.js';
 import { t, resolveReceiptFooter } from './i18n.js';
@@ -87,7 +87,7 @@ export function renderReceiptHtml(tx, settings = {}) {
   const storePhone = String(s.storePhone || '').trim();
   const receiptFooter = resolveReceiptFooter(s.receiptFooter);
 
-  const receiptNo = tData.receiptNo || tData.id || '-';
+  const receiptNo = formatTransactionCode(tData);
   const createdAt = formatDateTime(tData.createdAt);
   const orderLabel = getOrderTypeLabel(tData);
   const customerName = String(tData.customerName || '').trim();
@@ -308,7 +308,7 @@ export function formatReceiptText(tx, settings = {}) {
   }
 
   lines.push(dblLine);
-  lines.push(padRow(t('receipt.receiptShort'), tData.receiptNo || tData.id || '-'));
+  lines.push(padRow(t('receipt.receiptShort'), formatTransactionCode(tData)));
   lines.push(padRow(t('receipt.date'), formatDateTime(tData.createdAt)));
   lines.push(padRow(t('receipt.order'), getOrderTypeLabel(tData)));
   if (tData.customerName) {
@@ -430,7 +430,10 @@ function copyTextFallback(text) {
 
 export async function shareReceipt(tx, settings = {}) {
   const text = formatReceiptText(tx, settings);
-  const title = t('receipt.shareTitle', { ref: tx?.receiptNo || settings?.storeName || 'AruPOS' });
+  const shortCode = formatTransactionCode(tx);
+  const title = t('receipt.shareTitle', {
+    ref: shortCode !== '-' ? shortCode : settings?.storeName || 'AruPOS',
+  });
 
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     try {
@@ -524,11 +527,13 @@ export function openReceiptModal(
     }
   };
 
+  const shortCode = formatTransactionCode(tData);
+
   return openSheet({
     id: sheetId,
     title: isPostCheckout
       ? t('receipt.modalTitlePost')
-      : t('receipt.modalTitleView', { no: tData.receiptNo || '' }).trim(),
+      : t('receipt.modalTitleView', { no: shortCode !== '-' ? shortCode : '' }).trim(),
     size: 'md',
     contentHtml,
     footerHtml,

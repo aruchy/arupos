@@ -6,7 +6,7 @@ import {
   debounce,
   bus,
 } from '../utils.js';
-import { icon } from '../icons.js';
+import { icon, categoryIcon } from '../icons.js';
 import { store } from '../store.js';
 import {
   animateRupiah,
@@ -103,17 +103,58 @@ function renderShell() {
               autocomplete="off"
               aria-label="${escapeHtml(t('pos.searchAria'))}"
             />
-            <button
-              type="button"
-              id="pos-search-clear"
-              class="search-clear"
-              aria-label="${escapeHtml(t('common.clearSearchAria'))}"
-              hidden
-            >
-              ${icon('close')}
-            </button>
-          </div>
+          <button
+            type="button"
+            id="pos-search-clear"
+            class="search-clear"
+            aria-label="${escapeHtml(t('common.clearSearchAria'))}"
+            hidden
+          >
+            ${icon('close')}
+          </button>
         </div>
+
+        <div
+          class="view-switcher"
+          id="pos-view-switcher"
+          role="group"
+          aria-label="${escapeHtml(t('pos.viewModeAria'))}"
+        >
+          <button
+            type="button"
+            class="view-switcher-btn"
+            data-product-view="grid"
+            title="${escapeHtml(t('pos.viewGrid'))}"
+            aria-label="${escapeHtml(t('pos.viewGrid'))}"
+            aria-pressed="false"
+          >
+            ${icon('viewGrid')}
+            <span class="view-switcher-label">${escapeHtml(t('pos.viewGrid'))}</span>
+          </button>
+          <button
+            type="button"
+            class="view-switcher-btn"
+            data-product-view="compact"
+            title="${escapeHtml(t('pos.viewCompact'))}"
+            aria-label="${escapeHtml(t('pos.viewCompact'))}"
+            aria-pressed="false"
+          >
+            ${icon('viewCompact')}
+            <span class="view-switcher-label">${escapeHtml(t('pos.viewCompact'))}</span>
+          </button>
+          <button
+            type="button"
+            class="view-switcher-btn"
+            data-product-view="list"
+            title="${escapeHtml(t('pos.viewList'))}"
+            aria-label="${escapeHtml(t('pos.viewList'))}"
+            aria-pressed="false"
+          >
+            ${icon('viewList')}
+            <span class="view-switcher-label">${escapeHtml(t('pos.viewList'))}</span>
+          </button>
+        </div>
+      </div>
 
         <div class="pos-fnb-bar" id="pos-fnb-bar" hidden>
           <div class="seg-control" role="group" aria-label="${escapeHtml(t('pos.orderTypeAria'))}">
@@ -282,6 +323,46 @@ function syncShellTranslations() {
 
   const mobilePayLabel = rootEl.querySelector('#mobile-cart-pay-label');
   if (mobilePayLabel) mobilePayLabel.textContent = t('pos.pay');
+
+  const viewSwitcher = rootEl.querySelector('#pos-view-switcher');
+  if (viewSwitcher) {
+    viewSwitcher.setAttribute('aria-label', t('pos.viewModeAria'));
+    const labelMap = {
+      grid: t('pos.viewGrid'),
+      compact: t('pos.viewCompact'),
+      list: t('pos.viewList'),
+    };
+    viewSwitcher.querySelectorAll('[data-product-view]').forEach((btn) => {
+      const mode = btn.dataset.productView;
+      const lbl = labelMap[mode] || mode;
+      btn.title = lbl;
+      btn.setAttribute('aria-label', lbl);
+      const spanEl = btn.querySelector('.view-switcher-label');
+      if (spanEl) spanEl.textContent = lbl;
+    });
+  }
+}
+
+function getValidProductView(rawView) {
+  return rawView === 'compact' || rawView === 'list' ? rawView : 'grid';
+}
+
+function syncProductViewSwitcher() {
+  if (!rootEl) return;
+  const viewMode = getValidProductView(getSettings().productView);
+  const viewSwitcher = rootEl.querySelector('#pos-view-switcher');
+  if (viewSwitcher) {
+    viewSwitcher.querySelectorAll('[data-product-view]').forEach((btn) => {
+      const active = btn.dataset.productView === viewMode;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+  const gridEl = rootEl.querySelector('#pos-product-grid');
+  if (gridEl) {
+    gridEl.classList.remove('product-grid--grid', 'product-grid--compact', 'product-grid--list');
+    gridEl.classList.add(`product-grid--${viewMode}`);
+  }
 }
 
 function triggerGridReveal(gridEl) {
@@ -308,6 +389,7 @@ function bindShellEvents() {
 
   const searchInput = rootEl.querySelector('#pos-search-input');
   const searchClear = rootEl.querySelector('#pos-search-clear');
+  const viewSwitcher = rootEl.querySelector('#pos-view-switcher');
   const fnbBar = rootEl.querySelector('#pos-fnb-bar');
   const tableInput = rootEl.querySelector('#pos-table-input');
   const chipsEl = rootEl.querySelector('#pos-category-chips');
@@ -341,6 +423,17 @@ function bindShellEvents() {
       searchClear.hidden = true;
       renderProductGrid();
       triggerGridReveal(gridEl);
+    });
+  }
+
+  if (viewSwitcher) {
+    viewSwitcher.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-product-view]');
+      if (!btn) return;
+      const nextView = getValidProductView(btn.dataset.productView);
+      const currentView = getValidProductView(getSettings().productView);
+      if (nextView === currentView) return;
+      store.updateSettings({ productView: nextView });
     });
   }
 
@@ -410,7 +503,7 @@ function bindShellEvents() {
           : rootEl.querySelector('#mobile-cart-count-val') || rootEl.querySelector('#mobile-cart-bar');
 
         if (targetEl) {
-          flyToCart(card, targetEl, product.emoji || '+1');
+          flyToCart(card, targetEl, '+1');
         }
 
         const updatedCard = gridEl.querySelector(
@@ -616,9 +709,6 @@ function renderCategoryChips() {
   const catChips = categories
     .map((cat) => {
       const active = selectedCategory === cat.id;
-      const emojiHtml = cat.emoji
-        ? `<span aria-hidden="true">${escapeHtml(cat.emoji)}</span>`
-        : '';
       return `
         <button
           type="button"
@@ -627,7 +717,7 @@ function renderCategoryChips() {
           role="tab"
           aria-selected="${active ? 'true' : 'false'}"
         >
-          ${emojiHtml}
+          <span class="chip-cat-icon" aria-hidden="true">${categoryIcon(cat)}</span>
           <span>${escapeHtml(cat.name)}</span>
         </button>
       `;
@@ -644,6 +734,8 @@ function renderProductGrid() {
 
   const settings = getSettings();
   const isRetail = settings.mode === 'retail';
+  const viewMode = getValidProductView(settings.productView);
+  gridEl.className = `product-grid product-grid--${viewMode}`;
   const allActive = (store.getProducts() || []).filter((p) => p && p.active !== false);
   const filtered = getFilteredProducts();
   const qtyMap = buildCartItemQtyMap(cart.getState());
@@ -686,7 +778,7 @@ function renderProductGrid() {
 
       const mediaHtml = p.image
         ? `<img src="${escapeHtml(p.image)}" alt="${escapeHtml(p.name)}" loading="lazy" />`
-        : `<span aria-hidden="true">${escapeHtml(p.emoji || '📦')}</span>`;
+        : `<span class="product-cat-icon" aria-hidden="true">${categoryIcon(cat)}</span>`;
 
       const qtyBadgeHtml =
         qtyInCart > 0
@@ -694,22 +786,23 @@ function renderProductGrid() {
           : '';
 
       let stockPillHtml = '';
+      let listStockHtml = '';
       if (isRetail) {
         const pillStyle = isOutOfStock
           ? 'background:var(--danger-bg);color:var(--danger);border-color:rgba(185,28,28,0.28);'
           : isLowStock
             ? 'background:var(--warning-bg);color:var(--warning);border-color:rgba(180,83,9,0.28);'
             : '';
-        stockPillHtml = `<span class="product-stock-pill" style="${pillStyle}">${escapeHtml(
-          isOutOfStock ? t('pos.outOfStock') : t('pos.stockCount', { stock })
-        )}</span>`;
+        const stockText = isOutOfStock ? t('pos.outOfStock') : t('pos.stockCount', { stock });
+        stockPillHtml = `<span class="product-stock-pill" style="${pillStyle}">${escapeHtml(stockText)}</span>`;
+        listStockHtml = `<span class="product-list-stock tabular-nums" style="${pillStyle}">${escapeHtml(stockText)}</span>`;
       }
 
       const metaHtml =
         isRetail && p.sku
           ? `<span>${escapeHtml(p.sku)}</span>`
           : cat
-            ? `<span>${escapeHtml(cat.emoji ? `${cat.emoji} ${cat.name}` : cat.name)}</span>`
+            ? `<span>${escapeHtml(cat.name)}</span>`
             : '';
 
       const classes = ['product-card'];
@@ -724,14 +817,19 @@ function renderProductGrid() {
           ${isOutOfStock ? 'disabled aria-disabled="true"' : ''}
         >
           <div class="product-thumb">
-            ${mediaHtml}
+            <div class="product-thumb-media">${mediaHtml}</div>
             ${qtyBadgeHtml}
             ${stockPillHtml}
           </div>
           <div class="product-info">
-            <h3 class="product-name">${escapeHtml(p.name)}</h3>
-            <div class="product-meta">${metaHtml}</div>
-            <div class="product-price tabular-nums">${formatRupiah(p.price)}</div>
+            <div class="product-info-main">
+              <h3 class="product-name">${escapeHtml(p.name)}</h3>
+              ${metaHtml ? `<div class="product-meta">${metaHtml}</div>` : ''}
+            </div>
+            <div class="product-price-col">
+              <div class="product-price tabular-nums">${formatRupiah(p.price)}</div>
+              ${listStockHtml}
+            </div>
           </div>
         </button>
       `;
@@ -780,11 +878,15 @@ function buildCartItemsHtml(totals, { enterId = null } = {}) {
     `;
   }
 
+  const catMap = buildCategoryMap();
+
   return totals.items
     .map((item) => {
+      const catId = item.categoryId || store.getProductById(item.productId)?.categoryId;
+      const cat = catId ? catMap.get(catId) : null;
       const thumbHtml = item.image
         ? `<img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" style="width:42px;height:42px;border-radius:var(--radius-sm);object-fit:cover;flex-shrink:0;" />`
-        : `<span aria-hidden="true" style="width:42px;height:42px;border-radius:var(--radius-sm);background:var(--bg-surface);display:grid;place-items:center;font-size:1.35rem;flex-shrink:0;">${escapeHtml(item.emoji || '📦')}</span>`;
+        : `<span class="cart-item-cat-icon" aria-hidden="true">${categoryIcon(cat)}</span>`;
 
       const hasDisc = item.discountAmount > 0;
       const hasNote = Boolean(item.note);
@@ -883,23 +985,9 @@ function buildCartAdjustmentsHtml(cartState, totals) {
   const hasOrderDisc = totals.orderDiscountAmount > 0;
   const discLabel = escapeHtml(getOrderDiscountLabel(cartState, totals));
 
-  return `
-    <div style="width:100%;display:flex;flex-direction:column;gap:4px;">
-      <button
-        type="button"
-        class="btn ${hasOrderDisc ? 'btn--tonal' : 'btn--outlined'} btn--sm btn--block"
-        data-cart-action="order-discount"
-        style="justify-content:space-between;"
-        ${totals.itemCount === 0 ? 'disabled' : ''}
-      >
-        <span style="display:inline-flex;align-items:center;gap:6px;">
-          ${icon('percent')}
-          <span class="tabular-nums" data-order-disc-label>${discLabel}</span>
-        </span>
-        ${icon('chevronRight')}
-      </button>
-
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 2px;">
+  const serviceRowHtml = totals.serviceAllowed
+    ? `
+      <div data-cart-row="service" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 2px;">
         <label class="switch" for="cart-toggle-service-${scope}" style="width:100%;justify-content:space-between;">
           <span data-cart-toggle-label="service" style="font-size:0.84rem;font-weight:600;color:var(--text-secondary);">
             ${escapeHtml(totals.serviceLabel)} (${escapeHtml(totals.serviceRate)}%)
@@ -916,8 +1004,12 @@ function buildCartAdjustmentsHtml(cartState, totals) {
           </span>
         </label>
       </div>
+    `
+    : '';
 
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 2px;">
+  const taxRowHtml = totals.taxAllowed
+    ? `
+      <div data-cart-row="tax" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 2px;">
         <label class="switch" for="cart-toggle-tax-${scope}" style="width:100%;justify-content:space-between;">
           <span data-cart-toggle-label="tax" style="font-size:0.84rem;font-weight:600;color:var(--text-secondary);">
             ${escapeHtml(t('pos.taxSwitch', { label: totals.taxLabel, rate: totals.taxRate }))}
@@ -934,6 +1026,26 @@ function buildCartAdjustmentsHtml(cartState, totals) {
           </span>
         </label>
       </div>
+    `
+    : '';
+
+  return `
+    <div style="width:100%;display:flex;flex-direction:column;gap:4px;">
+      <button
+        type="button"
+        class="btn ${hasOrderDisc ? 'btn--tonal' : 'btn--outlined'} btn--sm btn--block"
+        data-cart-action="order-discount"
+        style="justify-content:space-between;"
+        ${totals.itemCount === 0 ? 'disabled' : ''}
+      >
+        <span style="display:inline-flex;align-items:center;gap:6px;">
+          ${icon('percent')}
+          <span class="tabular-nums" data-order-disc-label>${discLabel}</span>
+        </span>
+        ${icon('chevronRight')}
+      </button>
+      ${serviceRowHtml}
+      ${taxRowHtml}
     </div>
   `;
 }
@@ -941,7 +1053,14 @@ function buildCartAdjustmentsHtml(cartState, totals) {
 function syncCartAdjustments(adjEl, scope, cartState, totals) {
   if (!adjEl) return;
   const discBtn = adjEl.querySelector('[data-cart-action="order-discount"]');
-  if (!discBtn) {
+  const hasServiceRow = Boolean(adjEl.querySelector('[data-cart-row="service"]'));
+  const hasTaxRow = Boolean(adjEl.querySelector('[data-cart-row="tax"]'));
+
+  if (
+    !discBtn ||
+    hasServiceRow !== Boolean(totals.serviceAllowed) ||
+    hasTaxRow !== Boolean(totals.taxAllowed)
+  ) {
     adjEl.innerHTML = buildCartAdjustmentsHtml({ ...cartState, _scope: scope }, totals);
     return;
   }
@@ -2037,11 +2156,11 @@ function openCheckoutSheet() {
             orderDiscountType: mapDiscountTypeForStore(freshCart.orderDiscountType),
             orderDiscountValue: freshCart.orderDiscountValue,
             orderDiscountAmount: freshTotals.orderDiscountAmount,
-            serviceEnabled: freshCart.serviceEnabled,
+            serviceEnabled: freshTotals.serviceActive,
             serviceRate: freshTotals.serviceRate,
             serviceLabel: freshTotals.serviceLabel,
             serviceAmount: freshTotals.serviceAmount,
-            taxEnabled: freshCart.taxEnabled,
+            taxEnabled: freshTotals.taxActive,
             taxRate: freshTotals.taxRate,
             taxLabel: freshTotals.taxLabel,
             taxAmount: freshTotals.taxAmount,
@@ -2173,6 +2292,7 @@ function openCheckoutSheet() {
 export function renderPosView() {
   if (!rootEl) return;
   syncShellTranslations();
+  syncProductViewSwitcher();
   syncFnbBar();
   renderCategoryChips();
   renderProductGrid();
@@ -2205,6 +2325,11 @@ export function initPosView(container) {
     bus.on('settings:changed', (nextSettings) => {
       const keys = nextSettings?._changedKeys;
       if (Array.isArray(keys) && keys.length > 0 && keys.every((k) => k === 'theme' || k === 'accent')) {
+        return;
+      }
+      if (Array.isArray(keys) && keys.length > 0 && keys.every((k) => k === 'productView')) {
+        syncProductViewSwitcher();
+        triggerGridReveal(rootEl?.querySelector('#pos-product-grid'));
         return;
       }
       renderPosView();

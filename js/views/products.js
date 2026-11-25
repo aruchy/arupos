@@ -8,7 +8,7 @@ import {
   compressImageFile,
   bus,
 } from '../utils.js';
-import { icon } from '../icons.js';
+import { icon, categoryIcon } from '../icons.js';
 import {
   toast,
   openSheet,
@@ -224,6 +224,50 @@ function renderShell(container) {
           ${icon('close')}
         </button>
       </div>
+
+      <div
+        class="view-switcher"
+        data-role="products-view-switcher"
+        role="group"
+        aria-label="${escapeHtml(t('pos.viewModeAria'))}"
+      >
+        <button
+          type="button"
+          class="view-switcher-btn"
+          data-action="set-product-view"
+          data-product-view="grid"
+          title="${escapeHtml(t('pos.viewGrid'))}"
+          aria-label="${escapeHtml(t('pos.viewGrid'))}"
+          aria-pressed="false"
+        >
+          ${icon('viewGrid')}
+          <span class="view-switcher-label">${escapeHtml(t('pos.viewGrid'))}</span>
+        </button>
+        <button
+          type="button"
+          class="view-switcher-btn"
+          data-action="set-product-view"
+          data-product-view="compact"
+          title="${escapeHtml(t('pos.viewCompact'))}"
+          aria-label="${escapeHtml(t('pos.viewCompact'))}"
+          aria-pressed="false"
+        >
+          ${icon('viewCompact')}
+          <span class="view-switcher-label">${escapeHtml(t('pos.viewCompact'))}</span>
+        </button>
+        <button
+          type="button"
+          class="view-switcher-btn"
+          data-action="set-product-view"
+          data-product-view="list"
+          title="${escapeHtml(t('pos.viewList'))}"
+          aria-label="${escapeHtml(t('pos.viewList'))}"
+          aria-pressed="false"
+        >
+          ${icon('viewList')}
+          <span class="view-switcher-label">${escapeHtml(t('pos.viewList'))}</span>
+        </button>
+      </div>
     </div>
 
     <div class="chip-row" data-slot="chips" role="tablist" aria-label="${escapeHtml(t('products.filterAria'))}" style="margin-bottom:var(--space-4);"></div>
@@ -256,6 +300,51 @@ function syncShellTranslations() {
 
   const chipsEl = container.querySelector('[data-slot="chips"]');
   if (chipsEl) chipsEl.setAttribute('aria-label', t('products.filterAria'));
+
+  const viewSwitcher = container.querySelector('[data-role="products-view-switcher"]');
+  if (viewSwitcher) {
+    viewSwitcher.setAttribute('aria-label', t('pos.viewModeAria'));
+    const labelMap = {
+      grid: t('pos.viewGrid'),
+      compact: t('pos.viewCompact'),
+      list: t('pos.viewList'),
+    };
+    viewSwitcher.querySelectorAll('[data-product-view]').forEach((btn) => {
+      const mode = btn.dataset.productView;
+      const lbl = labelMap[mode] || mode;
+      btn.title = lbl;
+      btn.setAttribute('aria-label', lbl);
+      const spanEl = btn.querySelector('.view-switcher-label');
+      if (spanEl) spanEl.textContent = lbl;
+    });
+  }
+}
+
+function getValidProductView(rawView) {
+  return rawView === 'compact' || rawView === 'list' ? rawView : 'grid';
+}
+
+function syncProductViewSwitcher() {
+  const container = viewState.container;
+  if (!container) return;
+  const viewMode = getValidProductView(store.getSettings()?.productView);
+  const viewSwitcher = container.querySelector('[data-role="products-view-switcher"]');
+  if (viewSwitcher) {
+    viewSwitcher.querySelectorAll('[data-product-view]').forEach((btn) => {
+      const active = btn.dataset.productView === viewMode;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+  const gridEl = container.querySelector('.products-manage-grid');
+  if (gridEl) {
+    gridEl.classList.remove(
+      'products-manage-grid--grid',
+      'products-manage-grid--compact',
+      'products-manage-grid--list'
+    );
+    gridEl.classList.add(`products-manage-grid--${viewMode}`);
+  }
 }
 
 function renderDynamicRegions() {
@@ -263,6 +352,7 @@ function renderDynamicRegions() {
   if (!container) return;
 
   syncShellTranslations();
+  syncProductViewSwitcher();
 
   const settings = store.getSettings();
   const products = store.getProducts();
@@ -350,7 +440,6 @@ function renderDynamicRegions() {
       `<button type="button" class="chip ${viewState.activeFilter === 'out' ? 'is-active' : ''}" data-action="filter" data-filter="out">${escapeHtml(t('products.chipOut', { count: outCount }))}</button>`,
       ...categories.map((cat) => {
         const count = countByCat.get(cat.id) || 0;
-        const color = safeColor(cat.color);
         const isActive = viewState.activeFilter === cat.id;
         return `
           <button
@@ -359,8 +448,8 @@ function renderDynamicRegions() {
             data-action="filter"
             data-filter="${escapeHtml(cat.id)}"
           >
-            <span class="products-cat-dot" style="background:${color}"></span>
-            <span>${escapeHtml(cat.emoji)} ${escapeHtml(cat.name)} (${count})</span>
+            <span class="chip-cat-icon" aria-hidden="true">${categoryIcon(cat)}</span>
+            <span>${escapeHtml(cat.name)} (${count})</span>
           </button>
         `;
       }),
@@ -425,32 +514,32 @@ function renderDynamicRegions() {
     return;
   }
 
+  const viewMode = getValidProductView(settings.productView);
   const cardsHtml = filtered
     .map((p) => {
       const cat = categoryMap.get(p.categoryId);
-      const catColor = safeColor(cat?.color);
       const catLabel = cat
-        ? `${escapeHtml(cat.emoji)} ${escapeHtml(cat.name)}`
+        ? escapeHtml(cat.name)
         : escapeHtml(t('products.uncategorized'));
       const thumbHtml = isSafeDataImage(p.image)
         ? `<img src="${escapeHtml(p.image)}" alt="${escapeHtml(p.name)}" loading="lazy" />`
-        : `<span aria-hidden="true">${escapeHtml(p.emoji || '📦')}</span>`;
+        : `<span class="product-cat-icon" aria-hidden="true">${categoryIcon(cat)}</span>`;
 
       return `
         <article class="product-manage-card products-manage-card-wrap ${p.active ? '' : 'is-inactive'}" data-product-id="${escapeHtml(p.id)}">
           <div class="products-manage-top">
-            <div class="product-manage-thumb" style="border:1.5px solid ${catColor}33">${thumbHtml}</div>
+            <div class="product-manage-thumb">${thumbHtml}</div>
             <div class="product-manage-info">
               <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                <span style="font-weight:700; font-size:0.96rem; color:var(--text-primary); word-break:break-word;">${escapeHtml(p.name)}</span>
+                <span class="products-manage-name" style="font-weight:700; font-size:0.96rem; color:var(--text-primary); word-break:break-word;">${escapeHtml(p.name)}</span>
                 ${p.active ? '' : `<span class="badge badge--muted">${escapeHtml(t('common.inactive'))}</span>`}
               </div>
               <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:2px;">
-                <span class="badge badge--muted">
-                  <span class="products-cat-dot" style="background:${catColor}"></span>
-                  ${catLabel}
+                <span class="badge badge--muted products-manage-cat-badge">
+                  ${categoryIcon(cat, 'badge-cat-icon')}
+                  <span>${catLabel}</span>
                 </span>
-                <span class="tabular-nums" style="font-size:0.76rem; color:var(--text-muted);">
+                <span class="products-manage-sku tabular-nums" style="font-size:0.76rem; color:var(--text-muted);">
                   ${p.sku ? `SKU: ${escapeHtml(p.sku)}` : escapeHtml(t('products.noSku'))}
                 </span>
               </div>
@@ -513,7 +602,7 @@ function renderDynamicRegions() {
     })
     .join('');
 
-  listSlot.innerHTML = `<div class="products-manage-grid">${cardsHtml}</div>`;
+  listSlot.innerHTML = `<div class="products-manage-grid products-manage-grid--${viewMode}">${cardsHtml}</div>`;
 
   if (viewState.lastPopProductId) {
     const targetId = viewState.lastPopProductId;
@@ -541,7 +630,7 @@ function openProductFormSheet(productId = null) {
       const selected = existing
         ? existing.categoryId === cat.id
         : cat.id === categories[0]?.id;
-      return `<option value="${escapeHtml(cat.id)}" ${selected ? 'selected' : ''}>${escapeHtml(cat.emoji)} ${escapeHtml(cat.name)}</option>`;
+      return `<option value="${escapeHtml(cat.id)}" ${selected ? 'selected' : ''}>${escapeHtml(cat.name)}</option>`;
     })
     .join('');
 
@@ -928,8 +1017,8 @@ function openCategoriesSheet() {
           <div class="products-cat-item" data-cat-row="${escapeHtml(cat.id)}">
             <div class="products-cat-item-head">
               <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">
-                <span style="width:40px; height:40px; border-radius:var(--radius-sm); display:grid; place-items:center; font-size:1.25rem; flex-shrink:0; background:${color}22; border:1px solid ${color}55;">
-                  ${escapeHtml(cat.emoji)}
+                <span style="width:40px; height:40px; border-radius:var(--radius-sm); display:grid; place-items:center; flex-shrink:0; background:var(--primary-container); color:var(--on-primary-container); border:1px solid var(--border-subtle);">
+                  ${categoryIcon(cat)}
                 </span>
                 <div style="min-width:0;">
                   <div style="font-weight:700; font-size:0.94rem; color:var(--text-primary); word-break:break-word;">${escapeHtml(cat.name)}</div>
@@ -1333,6 +1422,14 @@ export function initProductsView(container) {
     if (!btn) return;
     const action = btn.dataset.action;
 
+    if (action === 'set-product-view') {
+      const nextView = getValidProductView(btn.dataset.productView);
+      const currentView = getValidProductView(store.getSettings()?.productView);
+      if (nextView === currentView) return;
+      store.updateSettings({ productView: nextView });
+      return;
+    }
+
     if (action === 'add-product') {
       openProductFormSheet(null);
       return;
@@ -1420,6 +1517,10 @@ export function initProductsView(container) {
   const onSettingsChanged = (nextSettings) => {
     const keys = nextSettings?._changedKeys;
     if (Array.isArray(keys) && keys.length > 0 && keys.every((k) => k === 'theme' || k === 'accent')) {
+      return;
+    }
+    if (Array.isArray(keys) && keys.length > 0 && keys.every((k) => k === 'productView')) {
+      syncProductViewSwitcher();
       return;
     }
     renderProductsView();

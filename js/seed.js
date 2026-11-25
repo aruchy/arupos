@@ -161,6 +161,7 @@ export function createSeedData() {
     theme: 'light',
     accent: 'emerald',
     language: 'id',
+    productView: 'grid',
     taxEnabled: false,
     taxRate: 11,
     taxLabel: 'PPN',

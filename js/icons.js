@@ -31,6 +31,12 @@ const ICON_PATHS = {
   table: '<path d="M3 10h18"/><path d="M5 10v8"/><path d="M19 10v8"/><path d="M12 10v8"/><path d="M4 7h16l1 3H3l1-3z"/>',
   utensils: '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
   bag: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+  cup: '<path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/>',
+  cookie: '<path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><path d="M8.5 8.5v.01"/><path d="M16 15.5v.01"/><path d="M12 12v.01"/><path d="M11 17v.01"/><path d="M7 14v.01"/>',
+  daily: '<path d="m5 11 4-7"/><path d="m19 11-4-7"/><path d="M2 11h20"/><path d="m3.5 11 1.6 7.4a2 2 0 0 0 2 1.6h9.8a2 2 0 0 0 2-1.6l1.7-7.4"/><path d="M9 11v5"/><path d="M15 11v5"/>',
+  viewGrid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  viewCompact: '<rect x="3" y="3" width="4.5" height="4.5" rx="1"/><rect x="9.75" y="3" width="4.5" height="4.5" rx="1"/><rect x="16.5" y="3" width="4.5" height="4.5" rx="1"/><rect x="3" y="9.75" width="4.5" height="4.5" rx="1"/><rect x="9.75" y="9.75" width="4.5" height="4.5" rx="1"/><rect x="16.5" y="9.75" width="4.5" height="4.5" rx="1"/><rect x="3" y="16.5" width="4.5" height="4.5" rx="1"/><rect x="9.75" y="16.5" width="4.5" height="4.5" rx="1"/><rect x="16.5" y="16.5" width="4.5" height="4.5" rx="1"/>',
+  viewList: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
   cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
@@ -48,4 +54,32 @@ export function icon(name, className = '') {
   const body = ICON_PATHS[name] || ICON_PATHS.info;
   const extraClass = className ? ` ${escapeHtml(className)}` : '';
   return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="aru-icon${extraClass}">${body}</svg>`;
+}
+
+export function getCategoryIconName(category) {
+  const id = typeof category === 'object' && category ? String(category.id || '').toLowerCase() : '';
+  const name = typeof category === 'object' && category
+    ? String(category.name || '').toLowerCase()
+    : String(category || '').toLowerCase();
+
+  if (id === 'cat_minuman' || /minum|drink|beverag|kopi|coffee|teh|tea|juice|jus/.test(name)) {
+    return 'cup';
+  }
+  if (id === 'cat_makanan' || /makan|food|meal|resto|nasi|mie|menu|utama|dish/.test(name)) {
+    return 'utensils';
+  }
+  if (id === 'cat_camilan' || /camil|snack|kue|pastry|bakery|roti|cake|dessert|goreng/.test(name)) {
+    return 'cookie';
+  }
+  if (id === 'cat_retail' || /retail|aksesor|accessor|fashion|baju|merch|elektron|gadget/.test(name)) {
+    return 'bag';
+  }
+  if (id === 'cat_harian' || /harian|daily|kebutuhan|rumah|household|grocer|sembako|sabun|toilet/.test(name)) {
+    return 'daily';
+  }
+  return 'products';
+}
+
+export function categoryIcon(category, className = '') {
+  return icon(getCategoryIconName(category), className);
 }

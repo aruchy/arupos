@@ -102,6 +102,27 @@ export function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (ch) => ESCAPE_MAP[ch]);
 }
 
+export function formatTransactionCode(txOrReceiptNo) {
+  const raw =
+    typeof txOrReceiptNo === 'string'
+      ? txOrReceiptNo
+      : String(txOrReceiptNo?.receiptNo || txOrReceiptNo?.id || '');
+  const clean = raw.trim();
+  if (!clean) return '-';
+
+  const hashMatch = clean.match(/^#(\d{1,6})$/);
+  if (hashMatch) {
+    return `#${hashMatch[1].padStart(3, '0')}`;
+  }
+
+  const tailMatch = clean.match(/(?:^|[-_])(\d{1,6})$/);
+  if (tailMatch) {
+    return `#${tailMatch[1].padStart(3, '0')}`;
+  }
+
+  return clean;
+}
+
 export function uid(prefix = 'id') {
   const safePrefix = String(prefix || 'id').replace(/[^a-zA-Z0-9_-]/g, '');
   const timePart = Date.now().toString(36);

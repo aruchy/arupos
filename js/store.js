@@ -12,6 +12,7 @@ const STORAGE_KEYS = {
 };
 
 const VALID_ACCENTS = ['emerald', 'amber', 'burgundy', 'sapphire'];
+const VALID_PRODUCT_VIEWS = ['grid', 'compact', 'list'];
 
 const DEFAULT_SETTINGS = {
   storeName: 'Kedai & Toko Aru',
@@ -22,6 +23,7 @@ const DEFAULT_SETTINGS = {
   theme: 'light',
   accent: 'emerald',
   language: 'id',
+  productView: 'grid',
   taxEnabled: false,
   taxRate: 11,
   taxLabel: 'PPN',
@@ -88,6 +90,9 @@ function normalizeSettings(raw) {
     theme: src.theme === 'dark' || src.theme === 'system' ? src.theme : 'light',
     accent: VALID_ACCENTS.includes(src.accent) ? src.accent : DEFAULT_SETTINGS.accent,
     language: VALID_LANGUAGES.includes(src.language) ? src.language : DEFAULT_SETTINGS.language,
+    productView: VALID_PRODUCT_VIEWS.includes(src.productView)
+      ? src.productView
+      : DEFAULT_SETTINGS.productView,
     taxEnabled: Boolean(src.taxEnabled),
     taxRate: Number.isFinite(taxRate) ? Math.min(100, Math.max(0, taxRate)) : DEFAULT_SETTINGS.taxRate,
     taxLabel: String(src.taxLabel ?? DEFAULT_SETTINGS.taxLabel).trim() || 'PPN',
@@ -310,10 +315,20 @@ function generateReceiptNoForDate(createdAt) {
   for (const tx of state.transactions) {
     if (getLocalDateKey(tx.createdAt) === dateKey) {
       sameDayCount += 1;
-      if (typeof tx.receiptNo === 'string' && tx.receiptNo.startsWith(prefix)) {
-        const parsedSeq = Number.parseInt(tx.receiptNo.slice(prefix.length), 10);
-        if (Number.isFinite(parsedSeq) && parsedSeq > maxSeq) {
-          maxSeq = parsedSeq;
+      if (typeof tx.receiptNo === 'string') {
+        if (tx.receiptNo.startsWith(prefix)) {
+          const parsedSeq = Number.parseInt(tx.receiptNo.slice(prefix.length), 10);
+          if (Number.isFinite(parsedSeq) && parsedSeq > maxSeq) {
+            maxSeq = parsedSeq;
+          }
+        } else {
+          const shortMatch = tx.receiptNo.trim().match(/^#(\d+)$/);
+          if (shortMatch) {
+            const parsedShort = Number.parseInt(shortMatch[1], 10);
+            if (Number.isFinite(parsedShort) && parsedShort > maxSeq) {
+              maxSeq = parsedShort;
+            }
+          }
         }
       }
     }

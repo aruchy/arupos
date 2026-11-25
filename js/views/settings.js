@@ -295,15 +295,14 @@ async function handleResetDemo() {
 function syncAppearanceCards(activeTheme = null, activeAccent = null) {
   if (!rootEl) return;
   if (activeTheme) {
-    const iconByTheme = { light: 'sun', dark: 'moon', system: 'pos' };
     rootEl.querySelectorAll('.theme-card[data-select-theme]').forEach((card) => {
       const id = card.getAttribute('data-select-theme');
       const isSelected = id === activeTheme;
       card.classList.toggle('is-active', isSelected);
       card.setAttribute('aria-checked', isSelected ? 'true' : 'false');
-      const topRow = card.firstElementChild;
-      if (topRow) {
-        topRow.innerHTML = `${icon(iconByTheme[id] || 'pos')}${isSelected ? icon('checkCircle') : ''}`;
+      const checkSlot = card.querySelector('[data-theme-check]');
+      if (checkSlot) {
+        checkSlot.innerHTML = isSelected ? icon('checkCircle') : '';
       }
     });
   }
@@ -393,7 +392,6 @@ function handleContainerClick(e) {
       animateLanguageSwitch([
         rootEl,
         document.querySelector('.store-title-wrap'),
-        document.querySelector('#topbar-mode-pill .mode-pill-text'),
         ...document.querySelectorAll('.nav-label'),
       ]);
     }
@@ -531,8 +529,14 @@ export function initSettingsView(container) {
     bus.on('settings:changed', (nextSettings) => {
       if (skipNextSettingsRender) return;
       const keys = nextSettings?._changedKeys;
-      if (Array.isArray(keys) && keys.length > 0 && keys.every((k) => k === 'theme' || k === 'accent')) {
-        syncAppearanceCards(nextSettings.theme, nextSettings.accent);
+      if (
+        Array.isArray(keys) &&
+        keys.length > 0 &&
+        keys.every((k) => k === 'theme' || k === 'accent' || k === 'productView')
+      ) {
+        if (keys.some((k) => k === 'theme' || k === 'accent')) {
+          syncAppearanceCards(nextSettings.theme, nextSettings.accent);
+        }
         return;
       }
       const active = document.activeElement;
@@ -566,21 +570,15 @@ export function renderSettingsView() {
       <header class="view-header">
         <div>
           <h1 class="view-title">${escapeHtml(t('settings.title'))}</h1>
-          <p class="view-subtitle">${escapeHtml(t('settings.subtitle'))}</p>
         </div>
       </header>
 
       <div class="settings-grid">
         <!-- Card 1: Mode Operasional Kasir -->
         <section class="settings-section" style="grid-column: 1 / -1;" aria-labelledby="settings-mode-title">
-          <div>
-            <h2 id="settings-mode-title" style="margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text-primary);">
-              ${escapeHtml(t('settings.modeTitle'))}
-            </h2>
-            <p style="margin: 3px 0 0; font-size: 0.84rem; color: var(--text-muted);">
-              ${escapeHtml(t('settings.modeSubtitle'))}
-            </p>
-          </div>
+          <h2 id="settings-mode-title" class="settings-section-title">
+            ${escapeHtml(t('settings.modeTitle'))}
+          </h2>
 
           <div class="mode-cards" role="radiogroup" aria-label="${escapeHtml(t('settings.modeGroupAria'))}">
             <button
@@ -590,16 +588,14 @@ export function renderSettingsView() {
               data-select-mode="retail"
               aria-checked="${s.mode === 'retail' ? 'true' : 'false'}"
             >
-              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; width: 100%; gap: 8px;">
-                <span style="display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 0.96rem;">
+              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; width: 100%; gap: 6px;">
+                <span style="display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 0.9rem;">
                   ${icon('bag')}
                   <span>${escapeHtml(t('settings.modeRetailName'))}</span>
                 </span>
                 ${s.mode === 'retail' ? `<span class="badge badge--primary">${icon('check')} ${escapeHtml(t('common.active'))}</span>` : ''}
               </div>
-              <p style="margin: 2px 0 0; font-size: 0.82rem; line-height: 1.45; opacity: 0.88;">
-                ${escapeHtml(t('settings.modeRetailDesc'))}
-              </p>
+              <p class="settings-card-desc">${escapeHtml(t('settings.modeRetailDesc'))}</p>
             </button>
 
             <button
@@ -609,30 +605,23 @@ export function renderSettingsView() {
               data-select-mode="fnb"
               aria-checked="${s.mode === 'fnb' ? 'true' : 'false'}"
             >
-              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; width: 100%; gap: 8px;">
-                <span style="display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 0.96rem;">
+              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; width: 100%; gap: 6px;">
+                <span style="display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 0.9rem;">
                   ${icon('utensils')}
                   <span>${escapeHtml(t('settings.modeFnbName'))}</span>
                 </span>
                 ${s.mode === 'fnb' ? `<span class="badge badge--primary">${icon('check')} ${escapeHtml(t('common.active'))}</span>` : ''}
               </div>
-              <p style="margin: 2px 0 0; font-size: 0.82rem; line-height: 1.45; opacity: 0.88;">
-                ${escapeHtml(t('settings.modeFnbDesc'))}
-              </p>
+              <p class="settings-card-desc">${escapeHtml(t('settings.modeFnbDesc'))}</p>
             </button>
           </div>
         </section>
 
         <!-- Card 2: Tampilan, Aksen & Bahasa -->
         <section class="settings-section" style="grid-column: 1 / -1;" aria-labelledby="settings-theme-title">
-          <div>
-            <h2 id="settings-theme-title" style="margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text-primary);">
-              ${escapeHtml(t('settings.appearanceTitle'))}
-            </h2>
-            <p style="margin: 3px 0 0; font-size: 0.84rem; color: var(--text-muted);">
-              ${escapeHtml(t('settings.appearanceSubtitle'))}
-            </p>
-          </div>
+          <h2 id="settings-theme-title" class="settings-section-title">
+            ${escapeHtml(t('settings.appearanceTitle'))}
+          </h2>
 
           <div class="theme-cards" role="radiogroup" aria-label="${escapeHtml(t('settings.themeGroupAria'))}">
             <button
@@ -644,10 +633,9 @@ export function renderSettingsView() {
             >
               <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
                 ${icon('sun')}
-                ${s.theme === 'light' ? icon('checkCircle') : ''}
+                <span data-theme-check class="settings-card-check">${s.theme === 'light' ? icon('checkCircle') : ''}</span>
               </div>
-              <strong style="font-size: 0.92rem;">${escapeHtml(t('theme.light.name'))}</strong>
-              <span style="font-size: 0.78rem; opacity: 0.82;">${escapeHtml(t('theme.light.desc'))}</span>
+              <strong class="settings-card-label">${escapeHtml(t('theme.light.name'))}</strong>
             </button>
 
             <button
@@ -659,10 +647,9 @@ export function renderSettingsView() {
             >
               <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
                 ${icon('moon')}
-                ${s.theme === 'dark' ? icon('checkCircle') : ''}
+                <span data-theme-check class="settings-card-check">${s.theme === 'dark' ? icon('checkCircle') : ''}</span>
               </div>
-              <strong style="font-size: 0.92rem;">${escapeHtml(t('theme.dark.name'))}</strong>
-              <span style="font-size: 0.78rem; opacity: 0.82;">${escapeHtml(t('theme.dark.desc'))}</span>
+              <strong class="settings-card-label">${escapeHtml(t('theme.dark.name'))}</strong>
             </button>
 
             <button
@@ -674,23 +661,17 @@ export function renderSettingsView() {
             >
               <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
                 ${icon('pos')}
-                ${s.theme === 'system' ? icon('checkCircle') : ''}
+                <span data-theme-check class="settings-card-check">${s.theme === 'system' ? icon('checkCircle') : ''}</span>
               </div>
-              <strong style="font-size: 0.92rem;">${escapeHtml(t('theme.system.name'))}</strong>
-              <span style="font-size: 0.78rem; opacity: 0.82;">${escapeHtml(t('theme.system.desc'))}</span>
+              <strong class="settings-card-label">${escapeHtml(t('theme.system.name'))}</strong>
             </button>
           </div>
 
           <div class="accent-divider" aria-hidden="true"></div>
 
-          <div>
-            <h3 style="margin: 0; font-size: 0.95rem; font-weight: 800; color: var(--text-primary);">
-              ${escapeHtml(t('settings.accentTitle'))}
-            </h3>
-            <p style="margin: 2px 0 0; font-size: 0.82rem; color: var(--text-muted);">
-              ${escapeHtml(t('settings.accentSubtitle'))}
-            </p>
-          </div>
+          <h3 class="settings-subsection-title">
+            ${escapeHtml(t('settings.accentTitle'))}
+          </h3>
 
           <div class="accent-cards" role="radiogroup" aria-label="${escapeHtml(t('settings.accentGroupAria'))}">
             ${ACCENT_THEMES.map((item) => {
@@ -703,16 +684,13 @@ export function renderSettingsView() {
                   data-select-accent="${escapeHtml(item.id)}"
                   aria-checked="${isSelected ? 'true' : 'false'}"
                 >
-                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-                    <span
-                      class="accent-swatch"
-                      aria-hidden="true"
-                      style="background: linear-gradient(135deg, ${escapeHtml(item.swatchLight)} 50%, ${escapeHtml(item.swatchDark)} 50%);"
-                    ></span>
-                    <span data-accent-check style="display: inline-flex;">${isSelected ? icon('checkCircle') : ''}</span>
-                  </div>
-                  <strong style="font-size: 0.9rem;">${escapeHtml(t(item.nameKey))}</strong>
-                  <span style="font-size: 0.76rem; opacity: 0.82; line-height: 1.35;">${escapeHtml(t(item.descKey))}</span>
+                  <span
+                    class="accent-swatch"
+                    aria-hidden="true"
+                    style="background: linear-gradient(135deg, ${escapeHtml(item.swatchLight)} 50%, ${escapeHtml(item.swatchDark)} 50%);"
+                  ></span>
+                  <strong class="settings-card-label">${escapeHtml(t(item.nameKey))}</strong>
+                  <span data-accent-check class="settings-card-check">${isSelected ? icon('checkCircle') : ''}</span>
                 </button>
               `;
             }).join('')}
@@ -720,14 +698,9 @@ export function renderSettingsView() {
 
           <div class="accent-divider" aria-hidden="true"></div>
 
-          <div>
-            <h3 style="margin: 0; font-size: 0.95rem; font-weight: 800; color: var(--text-primary);">
-              ${escapeHtml(t('lang.title'))}
-            </h3>
-            <p style="margin: 2px 0 0; font-size: 0.82rem; color: var(--text-muted);">
-              ${escapeHtml(t('lang.subtitle'))}
-            </p>
-          </div>
+          <h3 class="settings-subsection-title">
+            ${escapeHtml(t('lang.title'))}
+          </h3>
 
           <div class="lang-cards" role="radiogroup" aria-label="${escapeHtml(t('lang.aria'))}">
             ${LANGUAGES.map((item) => {
@@ -740,12 +713,9 @@ export function renderSettingsView() {
                   data-select-language="${escapeHtml(item.id)}"
                   aria-checked="${isSelected ? 'true' : 'false'}"
                 >
-                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-                    <span class="lang-badge" aria-hidden="true">${escapeHtml(item.code)}</span>
-                    <span data-lang-check style="display: inline-flex;">${isSelected ? icon('checkCircle') : ''}</span>
-                  </div>
-                  <strong style="font-size: 0.9rem;">${escapeHtml(item.nativeName)}</strong>
-                  <span style="font-size: 0.76rem; opacity: 0.82; line-height: 1.35;">${escapeHtml(t(item.descKey))}</span>
+                  <span class="lang-badge" aria-hidden="true">${escapeHtml(item.code)}</span>
+                  <strong class="settings-card-label">${escapeHtml(item.nativeName)}</strong>
+                  <span data-lang-check class="settings-card-check">${isSelected ? icon('checkCircle') : ''}</span>
                 </button>
               `;
             }).join('')}
@@ -754,16 +724,11 @@ export function renderSettingsView() {
 
         <!-- Card 3: Profil Toko & Struk -->
         <section class="settings-section" style="grid-column: 1 / -1;" aria-labelledby="settings-profile-title">
-          <div>
-            <h2 id="settings-profile-title" style="margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text-primary);">
-              ${escapeHtml(t('settings.profileTitle'))}
-            </h2>
-            <p style="margin: 3px 0 0; font-size: 0.84rem; color: var(--text-muted);">
-              ${escapeHtml(t('settings.profileSubtitle'))}
-            </p>
-          </div>
+          <h2 id="settings-profile-title" class="settings-section-title">
+            ${escapeHtml(t('settings.profileTitle'))}
+          </h2>
 
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; align-items: start;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: start;">
             <form id="settings-store-form" novalidate>
               <div class="field">
                 <label class="field-label" for="input-store-name">${escapeHtml(t('settings.storeNameLabel'))}</label>
@@ -811,13 +776,13 @@ export function renderSettingsView() {
                   id="input-receipt-footer"
                   name="receiptFooter"
                   class="textarea"
-                  rows="3"
+                  rows="2"
                   maxlength="200"
                   placeholder="${escapeHtml(t('settings.receiptFooterPlaceholder'))}"
                 >${escapeHtml(s.receiptFooter)}</textarea>
               </div>
 
-              <div style="margin-top: 14px;">
+              <div style="margin-top: 10px;">
                 <button type="submit" class="btn btn--primary">
                   ${icon('check')}
                   <span>${escapeHtml(t('settings.saveProfileBtn'))}</span>
@@ -826,7 +791,7 @@ export function renderSettingsView() {
             </form>
 
             <div class="receipt-preview-mini">
-              <div style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 10px; text-align: center;">
+              <div style="font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 8px; text-align: center;">
                 ${escapeHtml(t('settings.sampleReceiptHeading'))}
               </div>
               <div data-mini-receipt-preview>
@@ -838,17 +803,12 @@ export function renderSettingsView() {
 
         <!-- Card 4: Pajak & Biaya Layanan -->
         <section class="settings-section" aria-labelledby="settings-tax-title">
-          <div>
-            <h2 id="settings-tax-title" style="margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text-primary);">
-              ${escapeHtml(t('settings.taxTitle'))}
-            </h2>
-            <p style="margin: 3px 0 0; font-size: 0.84rem; color: var(--text-muted);">
-              ${escapeHtml(t('settings.taxSubtitle'))}
-            </p>
-          </div>
+          <h2 id="settings-tax-title" class="settings-section-title">
+            ${escapeHtml(t('settings.taxTitle'))}
+          </h2>
 
-          <form id="settings-tax-form" novalidate style="display: flex; flex-direction: column; gap: 16px;">
-            <div style="padding: 12px 14px; border-radius: var(--radius-md); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 10px;">
+          <form id="settings-tax-form" novalidate style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 8px;">
               <label class="switch" for="toggle-tax-enabled">
                 <input
                   id="toggle-tax-enabled"
@@ -858,7 +818,7 @@ export function renderSettingsView() {
                   ${s.taxEnabled ? 'checked' : ''}
                 />
                 <span class="switch-track"></span>
-                <span style="font-weight: 700; font-size: 0.92rem;">${escapeHtml(t('settings.taxEnableLabel'))}</span>
+                <span style="font-weight: 700; font-size: 0.9rem;">${escapeHtml(t('settings.taxEnableLabel'))}</span>
               </label>
 
               <div class="field-row" data-tax-fields>
@@ -890,7 +850,7 @@ export function renderSettingsView() {
               </div>
             </div>
 
-            <div style="padding: 12px 14px; border-radius: var(--radius-md); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 10px;">
+            <div style="padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 8px;">
               <label class="switch" for="toggle-service-enabled">
                 <input
                   id="toggle-service-enabled"
@@ -900,7 +860,7 @@ export function renderSettingsView() {
                   ${s.serviceEnabled ? 'checked' : ''}
                 />
                 <span class="switch-track"></span>
-                <span style="font-weight: 700; font-size: 0.92rem;">${escapeHtml(t('settings.serviceEnableLabel'))}</span>
+                <span style="font-weight: 700; font-size: 0.9rem;">${escapeHtml(t('settings.serviceEnableLabel'))}</span>
               </label>
 
               <div class="field-row" data-service-fields>
@@ -943,45 +903,40 @@ export function renderSettingsView() {
 
         <!-- Card 5: Cadangan & Data Lokal -->
         <section class="settings-section danger-zone" aria-labelledby="settings-backup-title">
-          <div>
-            <h2 id="settings-backup-title" style="margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text-primary);">
-              ${escapeHtml(t('settings.backupTitle'))}
-            </h2>
-            <p style="margin: 3px 0 0; font-size: 0.84rem; color: var(--text-secondary);">
-              ${escapeHtml(t('settings.backupSubtitle'))}
-            </p>
-          </div>
+          <h2 id="settings-backup-title" class="settings-section-title">
+            ${escapeHtml(t('settings.backupTitle'))}
+          </h2>
 
-          <div style="display: flex; flex-direction: column; gap: 12px;">
-            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border-radius: var(--radius-md); background: var(--bg-surface); border: 1px solid var(--border-subtle);">
-              <div style="flex: 1; min-width: 180px;">
-                <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-primary);">${escapeHtml(t('settings.exportTitle'))}</div>
-                <div style="font-size: 0.78rem; color: var(--text-muted);">${escapeHtml(t('settings.exportDesc'))}</div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-surface); border: 1px solid var(--border-subtle);">
+              <div style="flex: 1; min-width: 160px;">
+                <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-primary);">${escapeHtml(t('settings.exportTitle'))}</div>
+                <div class="settings-card-desc">${escapeHtml(t('settings.exportDesc'))}</div>
               </div>
-              <button type="button" class="btn btn--outlined" data-action="export-data">
+              <button type="button" class="btn btn--outlined btn--sm" data-action="export-data">
                 ${icon('download')}
                 <span>${escapeHtml(t('settings.exportBtn'))}</span>
               </button>
             </div>
 
-            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border-radius: var(--radius-md); background: var(--bg-surface); border: 1px solid var(--border-subtle);">
-              <div style="flex: 1; min-width: 180px;">
-                <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-primary);">${escapeHtml(t('settings.importTitle'))}</div>
-                <div style="font-size: 0.78rem; color: var(--text-muted);">${escapeHtml(t('settings.importDesc'))}</div>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-surface); border: 1px solid var(--border-subtle);">
+              <div style="flex: 1; min-width: 160px;">
+                <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-primary);">${escapeHtml(t('settings.importTitle'))}</div>
+                <div class="settings-card-desc">${escapeHtml(t('settings.importDesc'))}</div>
               </div>
               <input id="settings-import-file" type="file" accept="application/json,.json" hidden />
-              <button type="button" class="btn btn--outlined" data-action="trigger-import">
+              <button type="button" class="btn btn--outlined btn--sm" data-action="trigger-import">
                 ${icon('upload')}
                 <span>${escapeHtml(t('settings.importBtn'))}</span>
               </button>
             </div>
 
-            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border-radius: var(--radius-md); background: var(--bg-surface); border: 1px solid rgba(185, 28, 28, 0.30);">
-              <div style="flex: 1; min-width: 180px;">
-                <div style="font-weight: 700; font-size: 0.9rem; color: var(--danger);">${escapeHtml(t('settings.resetTitle'))}</div>
-                <div style="font-size: 0.78rem; color: var(--text-muted);">${escapeHtml(t('settings.resetDesc'))}</div>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-surface); border: 1px solid rgba(185, 28, 28, 0.30);">
+              <div style="flex: 1; min-width: 160px;">
+                <div style="font-weight: 700; font-size: 0.88rem; color: var(--danger);">${escapeHtml(t('settings.resetTitle'))}</div>
+                <div class="settings-card-desc">${escapeHtml(t('settings.resetDesc'))}</div>
               </div>
-              <button type="button" class="btn btn--danger" data-action="reset-demo">
+              <button type="button" class="btn btn--danger btn--sm" data-action="reset-demo">
                 ${icon('refresh')}
                 <span>${escapeHtml(t('settings.resetBtn'))}</span>
               </button>

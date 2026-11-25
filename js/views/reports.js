@@ -7,7 +7,7 @@ import {
   escapeHtml,
   bus,
 } from '../utils.js';
-import { icon } from '../icons.js';
+import { icon, categoryIcon } from '../icons.js';
 import { store } from '../store.js';
 import { animateRupiah, animateNumber, prefersReducedMotion, toast } from '../motion.js';
 import {
@@ -232,6 +232,7 @@ function aggregateTopProducts(completedTxs, limit = 8) {
       if (!row) {
         row = {
           key,
+          productId: item?.productId || '',
           name,
           emoji: String(item?.emoji || '').trim(),
           qtySold: 0,
@@ -471,6 +472,7 @@ function renderTopProductsHtml(completedTxs, periodLabelLower) {
   }
 
   const maxQty = Math.max(1, topProducts[0].qtySold);
+  const catMap = new Map((store.getCategories() || []).map((c) => [c.id, c]));
 
   return `
     <div class="top-products-list">
@@ -479,12 +481,14 @@ function renderTopProductsHtml(completedTxs, periodLabelLower) {
           const rank = idx + 1;
           const pct = Math.max(6, Math.round((item.qtySold / maxQty) * 100));
           const rankBadgeClass = rank === 1 ? 'badge--primary' : rank <= 3 ? 'badge--success' : 'badge--muted';
+          const product = item.productId ? store.getProductById(item.productId) : null;
+          const cat = product?.categoryId ? catMap.get(product.categoryId) : null;
           return `
             <div class="top-product-row">
               <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
                 <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
                   <span class="badge ${rankBadgeClass} tabular-nums">#${rank}</span>
-                  ${item.emoji ? `<span aria-hidden="true">${escapeHtml(item.emoji)}</span>` : ''}
+                  <span class="inline-cat-icon" aria-hidden="true">${categoryIcon(cat)}</span>
                   <span style="font-weight: 700; font-size: 0.9rem; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                     ${escapeHtml(item.name)}
                   </span>
@@ -761,7 +765,11 @@ export function initReportsView(container) {
   unsubs.push(
     bus.on('settings:changed', (nextSettings) => {
       const keys = nextSettings?._changedKeys;
-      if (Array.isArray(keys) && keys.length > 0 && keys.every((k) => k === 'theme' || k === 'accent')) {
+      if (
+        Array.isArray(keys) &&
+        keys.length > 0 &&
+        keys.every((k) => k === 'theme' || k === 'accent' || k === 'productView')
+      ) {
         return;
       }
       renderReportsView();

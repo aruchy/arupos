@@ -86,13 +86,17 @@ export function computeTotals(cartState, settings) {
   }
 
   const afterOrderDiscount = Math.max(0, subtotal - orderDiscountAmount);
+  const serviceAllowed = Boolean(s.serviceEnabled);
+  const serviceActive = serviceAllowed && Boolean(cs.serviceEnabled);
   const serviceRate = Math.max(0, Number(s.serviceRate) || 0);
-  const serviceAmount = cs.serviceEnabled
+  const serviceAmount = serviceActive
     ? Math.round((afterOrderDiscount * serviceRate) / 100)
     : 0;
 
+  const taxAllowed = Boolean(s.taxEnabled);
+  const taxActive = taxAllowed && Boolean(cs.taxEnabled);
   const taxRate = Math.max(0, Number(s.taxRate) || 0);
-  const taxAmount = cs.taxEnabled
+  const taxAmount = taxActive
     ? Math.round(((afterOrderDiscount + serviceAmount) * taxRate) / 100)
     : 0;
 
@@ -105,8 +109,12 @@ export function computeTotals(cartState, settings) {
     itemDiscountTotal,
     subtotal,
     orderDiscountAmount,
+    serviceAllowed,
+    serviceActive,
     serviceRate,
     serviceAmount,
+    taxAllowed,
+    taxActive,
     taxRate,
     taxLabel: s.taxLabel || 'PPN',
     serviceLabel: s.serviceLabel || 'Service',
@@ -204,6 +212,7 @@ export const cart = {
       existing.qty = nextQty;
       existing.name = latest.name;
       existing.sku = latest.sku || '';
+      existing.categoryId = latest.categoryId || '';
       existing.emoji = latest.emoji || '';
       existing.image = latest.image || '';
       existing.price = Math.max(0, Math.round(Number(latest.price) || 0));
@@ -212,6 +221,7 @@ export const cart = {
         productId: latest.id,
         name: latest.name,
         sku: latest.sku || '',
+        categoryId: latest.categoryId || '',
         emoji: latest.emoji || '',
         image: latest.image || '',
         price: Math.max(0, Math.round(Number(latest.price) || 0)),

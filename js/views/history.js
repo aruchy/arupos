@@ -4,10 +4,11 @@ import {
   getLocalDateKey,
   isSameLocalDay,
   escapeHtml,
+  formatTransactionCode,
   debounce,
   bus,
 } from '../utils.js';
-import { icon } from '../icons.js';
+import { icon, categoryIcon } from '../icons.js';
 import { store } from '../store.js';
 import { openReceiptModal } from '../receipt.js';
 import { toast, openSheet, closeSheet } from '../motion.js';
@@ -185,8 +186,10 @@ function matchesSearch(tx, query) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return true;
 
-  const receiptNo = String(tx?.receiptNo || tx?.id || '').toLowerCase();
-  if (receiptNo.includes(q)) return true;
+  const shortCode = formatTransactionCode(tx).toLowerCase();
+  const receiptNo = String(tx?.receiptNo || '').toLowerCase();
+  const txId = String(tx?.id || '').toLowerCase();
+  if (shortCode.includes(q) || receiptNo.includes(q) || txId.includes(q)) return true;
 
   const customer = String(tx?.customerName || '').toLowerCase();
   if (customer.includes(q)) return true;
@@ -296,7 +299,7 @@ function renderTxCardHtml(tx) {
     >
       <div style="min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px;">
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-          <span class="tabular-nums" style="font-weight: 800; font-size: 0.94rem;">${escapeHtml(tx.receiptNo || tx.id)}</span>
+          <span class="tabular-nums" style="font-weight: 800; font-size: 0.94rem;">${escapeHtml(formatTransactionCode(tx))}</span>
           ${voided ? '<span class="badge badge--danger">VOID</span>' : ''}
         </div>
         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
@@ -374,6 +377,8 @@ function renderTxDetailBodyHtml(tx) {
   const cashReceived = getTxCashReceived(tx);
   const changeAmount = getTxChange(tx);
 
+  const catMap = new Map((store.getCategories() || []).map((c) => [c.id, c]));
+
   const itemsHtml = items
     .map((item) => {
       const qty = getItemQty(item);
@@ -382,13 +387,15 @@ function renderTxDetailBodyHtml(tx) {
       const net = getItemNetTotal(item);
       const itemNote = String(item?.note || '').trim();
       const sku = String(item?.sku || '').trim();
-      const emoji = String(item?.emoji || '').trim();
+      const product = item?.productId ? store.getProductById(item.productId) : null;
+      const cat = product?.categoryId ? catMap.get(product.categoryId) : null;
 
       return `
         <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-subtle);">
           <div style="min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px;">
-            <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-primary); word-break: break-word;">
-              ${emoji ? `<span aria-hidden="true" style="margin-right: 4px;">${escapeHtml(emoji)}</span>` : ''}${escapeHtml(item?.name || t('common.product'))}
+            <div style="display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 0.9rem; color: var(--text-primary); word-break: break-word;">
+              <span class="inline-cat-icon" aria-hidden="true">${categoryIcon(cat)}</span>
+              <span>${escapeHtml(item?.name || t('common.product'))}</span>
             </div>
             <div class="tabular-nums" style="font-size: 0.8rem; color: var(--text-muted);">
               ${qty} x ${escapeHtml(formatRupiah(unitPrice))}${sku ? ` · SKU ${escapeHtml(sku)}` : ''}
@@ -416,7 +423,7 @@ function renderTxDetailBodyHtml(tx) {
     <div data-detail-tx-id="${escapeHtml(tx.id)}" style="display: flex; flex-direction: column; gap: 16px;">
       <div style="display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border-subtle);">
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-          <h3 class="tabular-nums" style="margin: 0; font-size: 1.05rem; font-weight: 800;">${escapeHtml(tx.receiptNo || tx.id)}</h3>
+          <h3 class="tabular-nums" style="margin: 0; font-size: 1.05rem; font-weight: 800;">${escapeHtml(formatTransactionCode(tx))}</h3>
           ${
             voided
               ? `<span class="badge badge--danger">${icon('ban')} <span>${escapeHtml(t('history.voidBadge'))}</span></span>`
@@ -595,7 +602,7 @@ function openVoidConfirmationSheet(txId) {
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: var(--radius-md); background: var(--bg-surface-2); border: 1px solid var(--border-subtle);">
         <div>
           <div style="font-size: 0.76rem; color: var(--text-muted);">${escapeHtml(t('history.voidReceiptNo'))}</div>
-          <div class="tabular-nums" style="font-weight: 800; font-size: 0.94rem;">${escapeHtml(tx.receiptNo || tx.id)}</div>
+          <div class="tabular-nums" style="font-weight: 800; font-size: 0.94rem;">${escapeHtml(formatTransactionCode(tx))}</div>
         </div>
         <div style="text-align: right;">
           <div style="font-size: 0.76rem; color: var(--text-muted);">${escapeHtml(t('history.voidTotalTx'))}</div>
@@ -676,7 +683,7 @@ function openMobileDetailSheet(tx) {
   if (!tx) return;
   openSheet({
     id: DETAIL_SHEET_ID,
-    title: tx.receiptNo || t('history.detailTitleFallback'),
+    title: formatTransactionCode(tx) || t('history.detailTitleFallback'),
     contentHtml: renderTxDetailBodyHtml(tx),
     footerHtml: renderTxDetailActionsHtml(tx),
     size: 'md',
@@ -753,7 +760,7 @@ function mountShell() {
         <div class="view-actions" data-history-summary></div>
       </header>
 
-      <section class="history-filters" aria-label="${escapeHtml(t('history.filtersAria'))}" style="flex-direction: column; align-items: stretch; gap: 10px;">
+      <section class="history-filters" aria-label="${escapeHtml(t('history.filtersAria'))}">
         <div class="search-bar">
           ${icon('search')}
           <input
@@ -775,7 +782,7 @@ function mountShell() {
           </button>
         </div>
 
-        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;">
+        <div class="history-filter-groups">
           <div class="chip-row" data-filter-row="date" role="group" aria-label="${escapeHtml(t('history.dateAria'))}">
             ${buildFilterChips('date', getDateFilterOptions(), state.dateFilter)}
           </div>
@@ -1074,7 +1081,11 @@ export function initHistoryView(container) {
   unsubs.push(
     bus.on('settings:changed', (nextSettings) => {
       const keys = nextSettings?._changedKeys;
-      if (Array.isArray(keys) && keys.length > 0 && keys.every((k) => k === 'theme' || k === 'accent')) {
+      if (
+        Array.isArray(keys) &&
+        keys.length > 0 &&
+        keys.every((k) => k === 'theme' || k === 'accent' || k === 'productView')
+      ) {
         return;
       }
       renderHistoryView();

@@ -79,7 +79,6 @@ function syncTopBar() {
   const settings = store.getSettings();
   const storeNameEl = document.getElementById('topbar-store-name');
   const storeSubEl = document.getElementById('topbar-store-sub');
-  const modePillEl = document.getElementById('topbar-mode-pill');
   const themeBtnEl = document.getElementById('topbar-theme-btn');
 
   if (storeNameEl) {
@@ -89,23 +88,6 @@ function syncTopBar() {
     storeSubEl.textContent = settings.mode === 'fnb'
       ? t('app.storeSubFnb')
       : t('app.storeSubRetail');
-  }
-
-  if (modePillEl) {
-    const isFnb = settings.mode === 'fnb';
-    modePillEl.classList.toggle('mode-pill--fnb', isFnb);
-    modePillEl.classList.toggle('mode-pill--retail', !isFnb);
-    modePillEl.title = t('app.modePillTitle');
-    modePillEl.setAttribute(
-      'aria-label',
-      t('app.modePillAria', {
-        mode: isFnb ? t('app.modeShortFnb') : t('app.modeShortRetail'),
-      })
-    );
-    const iconWrap = modePillEl.querySelector('.mode-pill-icon');
-    const textWrap = modePillEl.querySelector('.mode-pill-text');
-    if (iconWrap) iconWrap.innerHTML = icon(isFnb ? 'utensils' : 'bag');
-    if (textWrap) textWrap.textContent = isFnb ? t('app.modeBadgeFnb') : t('app.modeBadgeRetail');
   }
 
   if (themeBtnEl) {
@@ -198,13 +180,6 @@ function bootstrap() {
       if (target) switchView(target);
     });
   });
-
-  const modePillBtn = document.getElementById('topbar-mode-pill');
-  if (modePillBtn) {
-    modePillBtn.addEventListener('click', () => {
-      switchView('settings');
-    });
-  }
 
   const themeBtn = document.getElementById('topbar-theme-btn');
   if (themeBtn) {

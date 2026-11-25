@@ -1,0 +1,466 @@
+/* ==========================================================================
+   AruPOS Motion & Micro-Animations
+   Unified cubic-bezier(0.22, 1, 0.36, 1) flow, 100% GPU-composited (transform + opacity)
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. View Transitions (~240ms)
+   -------------------------------------------------------------------------- */
+
+@keyframes viewEnterRight {
+  from {
+    opacity: 0;
+    transform: translate3d(14px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes viewEnterLeft {
+  from {
+    opacity: 0;
+    transform: translate3d(-14px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes viewFadeIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.view.is-entering-right {
+  will-change: transform, opacity;
+  animation: viewEnterRight 240ms var(--ease-smooth) both;
+}
+
+.view.is-entering-left {
+  will-change: transform, opacity;
+  animation: viewEnterLeft 240ms var(--ease-smooth) both;
+}
+
+.view.is-entering-fade {
+  will-change: transform, opacity;
+  animation: viewFadeIn 220ms var(--ease-smooth) both;
+}
+
+/* --------------------------------------------------------------------------
+   2. Tactile Press Feedback, Theme Icon Flow & Smooth Badge Swell
+   -------------------------------------------------------------------------- */
+
+.product-card:active:not(.is-out),
+.btn:active:not(:disabled),
+.chip:active,
+.method-card:active,
+.quick-cash-btn:active,
+.qty-btn:active:not(:disabled),
+.tx-card:active,
+.mode-card:active,
+.theme-card:active,
+.accent-card:active,
+.lang-card:active {
+  transform: scale(0.98);
+}
+
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.nav-item:active .nav-icon {
+  transform: scale(0.94);
+}
+
+@keyframes themeIconSpin {
+  0% {
+    transform: rotate(-24deg) scale(0.9);
+    opacity: 0.5;
+  }
+  100% {
+    transform: rotate(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
+.theme-icon-spin {
+  animation: themeIconSpin 220ms var(--ease-smooth) both;
+}
+
+@keyframes badgePop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.product-badge-qty,
+.is-popping {
+  animation: badgePop 220ms var(--ease-smooth) both;
+}
+
+/* --------------------------------------------------------------------------
+   3. Cart Item Enter / Remove
+   -------------------------------------------------------------------------- */
+
+@keyframes cartItemIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes cartItemOut {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
+  }
+}
+
+.cart-item.is-entering {
+  animation: cartItemIn 220ms var(--ease-smooth) both;
+}
+
+.cart-item.is-removing {
+  animation: cartItemOut 180ms var(--ease-smooth) both;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   4. Bottom Sheet (Mobile) & Dialog Modal (Desktop/Tablet)
+   -------------------------------------------------------------------------- */
+
+@keyframes backdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes backdropOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sheetSlideUp {
+  from {
+    opacity: 0.85;
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes sheetSlideDown {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 100%, 0);
+  }
+}
+
+@keyframes sheetModalIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes sheetModalOut {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.98);
+  }
+}
+
+.sheet-backdrop {
+  animation: backdropIn 220ms var(--ease-smooth) both;
+}
+
+.sheet-backdrop.is-opening .sheet-panel,
+.sheet-backdrop.is-closing .sheet-panel {
+  will-change: transform, opacity;
+}
+
+.sheet-backdrop .sheet-panel {
+  animation: sheetSlideUp 280ms var(--ease-smooth) both;
+}
+
+.sheet-panel.is-dragging {
+  animation: none !important;
+  transition: none !important;
+}
+
+.sheet-backdrop.is-closing {
+  animation: backdropOut 210ms var(--ease-smooth) both;
+  pointer-events: none;
+}
+
+.sheet-backdrop.is-closing .sheet-panel {
+  animation: sheetSlideDown 210ms var(--ease-smooth) both;
+}
+
+@media (min-width: 900px) {
+  .sheet-backdrop .sheet-panel {
+    animation: sheetModalIn 240ms var(--ease-smooth) both;
+  }
+
+  .sheet-backdrop.is-closing .sheet-panel {
+    animation: sheetModalOut 180ms var(--ease-smooth) both;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   5. Toast Notifications & Progress
+   -------------------------------------------------------------------------- */
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -12px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes toastOut {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0) scale(0.98);
+  }
+}
+
+@keyframes toastProgress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.toast {
+  animation: toastIn 240ms var(--ease-smooth) both;
+}
+
+.toast.is-leaving {
+  animation: toastOut 180ms var(--ease-smooth) both;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   6. MD3 Ripple Wave
+   -------------------------------------------------------------------------- */
+
+@keyframes rippleExpand {
+  from {
+    transform: scale(0);
+    opacity: 0.32;
+  }
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+.aru-ripple {
+  animation: rippleExpand 420ms var(--ease-smooth) forwards;
+}
+
+/* --------------------------------------------------------------------------
+   7. Chart Bar Rise, List & Detail Reveals
+   -------------------------------------------------------------------------- */
+
+@keyframes barRise {
+  from {
+    transform: scaleY(0);
+    opacity: 0.35;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.chart-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: barRise 320ms var(--ease-smooth) both;
+}
+
+@keyframes listReveal {
+  from {
+    opacity: 0.72;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.is-list-revealing {
+  animation: listReveal 180ms var(--ease-smooth) both;
+}
+
+@keyframes detailSlideIn {
+  from {
+    opacity: 0;
+    transform: translate3d(8px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.is-detail-entering {
+  animation: detailSlideIn 200ms var(--ease-smooth) both;
+}
+
+@keyframes kpiIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.kpi-card--animated {
+  animation: kpiIn 240ms var(--ease-smooth) calc(var(--stagger-i, 0) * 35ms) both;
+}
+
+/* --------------------------------------------------------------------------
+   8. Checkout Success Banner & Checkmark Draw
+   -------------------------------------------------------------------------- */
+
+@keyframes successBannerIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.success-banner {
+  animation: successBannerIn 240ms var(--ease-smooth) both;
+}
+
+@keyframes checkCirclePop {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes checkDraw {
+  from {
+    stroke-dashoffset: 48;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.success-check-svg {
+  animation: checkCirclePop 240ms var(--ease-smooth) both;
+}
+
+.success-check-mark {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: checkDraw 300ms 100ms var(--ease-smooth) forwards;
+}
+
+/* --------------------------------------------------------------------------
+   9. Reduced Motion Accessibility
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after,
+  html.is-theme-switching * {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .aru-ripple,
+  .fly-ghost,
+  .toast-progress {
+    display: none !important;
+  }
+
+  .mobile-cart-bar {
+    transition: none !important;
+  }
+
+  .progress-bar-fill {
+    transform: scaleX(1) !important;
+  }
+
+  .success-check-mark {
+    stroke-dashoffset: 0 !important;
+  }
+}

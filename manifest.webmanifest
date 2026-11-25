@@ -1,0 +1,26 @@
+{
+  "name": "AruPOS - Kasir Digital Offline",
+  "short_name": "AruPOS",
+  "description": "Aplikasi kasir POS serbaguna untuk HP dan tablet dengan dukungan mode Retail dan F&B, berjalan offline.",
+  "lang": "id-ID",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ECEAE6",
+  "theme_color": "#145A46",
+  "icons": [
+    {
+      "src": "./assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

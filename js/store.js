@@ -1,5 +1,5 @@
-import { createSeedData } from './seed.js';
-import { uid, getLocalDateKey, bus } from './utils.js';
+import { filterLocalDataForMigration } from './migration.js';
+import { uid, getLocalDateKey, bus, formatDateTime, formatTransactionCode } from './utils.js';
 import { t, setLanguage, getLocale, VALID_LANGUAGES } from './i18n.js';
 import { getCategoryIconName } from './icons.js';
 
@@ -10,17 +10,19 @@ const STORAGE_KEYS = {
   settings: 'arupos_v1_settings',
   seeded: 'arupos_v1_seeded',
   themePref: 'arupos_v1_theme_pref',
+  accentPref: 'arupos_v1_accent_pref',
+  langPref: 'arupos_v1_lang_pref',
 };
 
 const VALID_ACCENTS = ['emerald', 'amber', 'burgundy', 'sapphire'];
 const VALID_PRODUCT_VIEWS = ['grid', 'compact', 'list'];
 
 const DEFAULT_SETTINGS = {
-  storeName: 'Kedai & Toko Aru',
-  storeAddress: 'Jl. Boulevard Deltamas No. 18, Cikarang',
-  storePhone: '0812-3456-7890',
-  receiptFooter: 'Terima kasih sudah berbelanja! Simpan struk ini sebagai bukti pembayaran.',
-  mode: 'retail',
+  storeName: '',
+  storeAddress: '',
+  storePhone: '',
+  receiptFooter: '',
+  setupCompleted: false,
   theme: 'light',
   accent: 'emerald',
   language: 'id',
@@ -36,10 +38,10 @@ const DEFAULT_SETTINGS = {
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
 const DEFAULT_CATEGORY_COLORS = [
   '#0EA5E9',
-  '#D97706',
   '#DB2777',
   '#7C3AED',
   '#0D9488',
+  '#D97706',
   '#2563EB',
   '#EA580C',
   '#65A30D',
@@ -52,6 +54,31 @@ const state = {
   products: [],
   transactions: [],
 };
+
+let currentUser = null;
+let cloudAdapter = null;
+let cloudUnsub = null;
+let cloudSessionSeq = 0;
+let pendingCloudWriteCount = 0;
+let syncStatus = {
+  state: 'idle', // 'idle' | 'syncing' | 'synced' | 'offline' | 'error'
+  lastSyncedAt: null,
+  pendingWrites: false,
+  errorCode: null,
+  errorMessage: '',
+};
+
+function emitSyncStatus() {
+  bus.emit('sync:changed', { ...syncStatus });
+}
+
+function updateSyncStatus(patch) {
+  syncStatus = {
+    ...syncStatus,
+    ...patch,
+  };
+  emitSyncStatus();
+}
 
 function safeReadStorage(key) {
   try {
@@ -68,6 +95,17 @@ function safeParseJson(raw) {
   } catch {
     return null;
   }
+}
+
+function readAppearancePrefs() {
+  const themePref = safeReadStorage(STORAGE_KEYS.themePref);
+  const accentPref = safeReadStorage(STORAGE_KEYS.accentPref);
+  const langPref = safeReadStorage(STORAGE_KEYS.langPref);
+  return {
+    theme: themePref === 'dark' || themePref === 'system' ? themePref : 'light',
+    accent: VALID_ACCENTS.includes(accentPref) ? accentPref : DEFAULT_SETTINGS.accent,
+    language: VALID_LANGUAGES.includes(langPref) ? langPref : DEFAULT_SETTINGS.language,
+  };
 }
 
 function persistKey(key, value) {
@@ -88,16 +126,34 @@ function persistKey(key, value) {
   }
 }
 
+function syncAppearancePrefsStorage(settingsObj) {
+  if (!settingsObj || typeof settingsObj !== 'object') return;
+  try {
+    const { theme, accent, language } = settingsObj;
+    if (theme === 'light' || theme === 'dark' || theme === 'system') {
+      window.localStorage.setItem(STORAGE_KEYS.themePref, theme);
+    }
+    if (VALID_ACCENTS.includes(accent)) {
+      window.localStorage.setItem(STORAGE_KEYS.accentPref, accent);
+    }
+    if (VALID_LANGUAGES.includes(language)) {
+      window.localStorage.setItem(STORAGE_KEYS.langPref, language);
+    }
+  } catch {
+    // Ignore preference storage errors
+  }
+}
+
 function normalizeSettings(raw) {
   const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   const taxRate = Number(src.taxRate);
   const serviceRate = Number(src.serviceRate);
   return {
-    storeName: String(src.storeName ?? DEFAULT_SETTINGS.storeName).trim() || DEFAULT_SETTINGS.storeName,
+    storeName: String(src.storeName ?? DEFAULT_SETTINGS.storeName).trim(),
     storeAddress: String(src.storeAddress ?? DEFAULT_SETTINGS.storeAddress).trim(),
     storePhone: String(src.storePhone ?? DEFAULT_SETTINGS.storePhone).trim(),
     receiptFooter: String(src.receiptFooter ?? DEFAULT_SETTINGS.receiptFooter).trim(),
-    mode: src.mode === 'fnb' ? 'fnb' : 'retail',
+    setupCompleted: Boolean(src.setupCompleted),
     theme: src.theme === 'dark' || src.theme === 'system' ? src.theme : 'light',
     accent: VALID_ACCENTS.includes(src.accent) ? src.accent : DEFAULT_SETTINGS.accent,
     language: VALID_LANGUAGES.includes(src.language) ? src.language : DEFAULT_SETTINGS.language,
@@ -115,34 +171,37 @@ function normalizeSettings(raw) {
   };
 }
 
-function normalizeCategory(raw) {
+function normalizeCategory(raw, idx = 0) {
+  const fallbackColor = DEFAULT_CATEGORY_COLORS[idx % DEFAULT_CATEGORY_COLORS.length];
   const color = typeof raw?.color === 'string' && HEX_COLOR_RE.test(raw.color.trim())
     ? raw.color.trim()
-    : DEFAULT_CATEGORY_COLORS[0];
+    : fallbackColor;
   const name = String(raw?.name || t('store.defaultCategory')).trim() || t('store.defaultCategory');
-  const emoji = String(raw?.emoji || '🏷️').trim() || '🏷️';
+  const legacyEmoji = typeof raw?.emoji === 'string' ? raw.emoji.trim() : '';
   return {
     id: String(raw?.id || uid('cat')).trim(),
     name,
-    icon: getCategoryIconName({ id: raw?.id, name, icon: raw?.icon, emoji }),
-    emoji,
+    icon: getCategoryIconName({ id: raw?.id, name, icon: raw?.icon, emoji: legacyEmoji }),
     color,
+    isDemo: Boolean(raw?.isDemo),
   };
 }
 
-function normalizeProduct(raw, fallbackCategoryId) {
+function normalizeProduct(raw, fallbackCategoryId = '') {
   const priceNum = Math.round(Number(raw?.price));
   const stockNum = Math.round(Number(raw?.stock));
+  const hasExplicitCat = raw?.categoryId !== undefined && raw?.categoryId !== null;
+  const rawCatId = hasExplicitCat ? String(raw.categoryId).trim() : '';
   return {
     id: String(raw?.id || uid('prd')).trim(),
     name: String(raw?.name || t('store.defaultProduct')).trim() || t('store.defaultProduct'),
     price: Number.isFinite(priceNum) && priceNum >= 0 ? priceNum : 0,
-    categoryId: String(raw?.categoryId || fallbackCategoryId || '').trim() || fallbackCategoryId,
+    categoryId: hasExplicitCat ? rawCatId : fallbackCategoryId || '',
     sku: String(raw?.sku || '').trim().toUpperCase(),
     stock: Number.isFinite(stockNum) && stockNum >= 0 ? stockNum : 0,
-    emoji: String(raw?.emoji || '📦').trim() || '📦',
     image: typeof raw?.image === 'string' ? raw.image : '',
     active: raw?.active === undefined ? true : Boolean(raw.active),
+    isDemo: Boolean(raw?.isDemo),
     createdAt: raw?.createdAt || new Date().toISOString(),
   };
 }
@@ -178,7 +237,6 @@ function normalizeTxItem(item) {
     productId: String(item?.productId || ''),
     name: String(item?.name || t('store.defaultItem')),
     sku: String(item?.sku || ''),
-    emoji: String(item?.emoji || '📦'),
     price,
     qty,
     grossTotal,
@@ -244,17 +302,15 @@ function normalizeTransaction(raw) {
       : grandTotal;
   const changeAmount = paymentMethod === 'cash' ? Math.max(0, cashReceived - grandTotal) : 0;
 
-  return {
+  const normalized = {
     id: String(raw?.id || uid('tx')),
     receiptNo: String(raw?.receiptNo || ''),
     createdAt: raw?.createdAt || new Date().toISOString(),
     status: raw?.status === 'void' ? 'void' : 'completed',
     voidedAt: raw?.status === 'void' ? raw?.voidedAt || new Date().toISOString() : null,
     voidReason: raw?.status === 'void' ? String(raw?.voidReason || t('store.defaultVoidReason')) : '',
-    mode: raw?.mode === 'fnb' ? 'fnb' : 'retail',
-    stockDeducted: Boolean(raw?.stockDeducted),
-    orderType: String(raw?.orderType || ''),
-    tableNumber: String(raw?.tableNumber || ''),
+    stockDeducted: raw?.stockDeducted === undefined ? true : Boolean(raw.stockDeducted),
+    isDemo: Boolean(raw?.isDemo),
     customerName: String(raw?.customerName || ''),
     items,
     rawSubtotal,
@@ -277,6 +333,51 @@ function normalizeTransaction(raw) {
     cashReceived,
     changeAmount,
   };
+
+  // Preserve historical order context read-only if present on legacy records
+  const rawOrderType = String(raw?.orderType || raw?.legacyOrderType || '').trim();
+  const rawTableNumber = String(raw?.tableNumber || raw?.legacyTableNumber || '').trim();
+  if (rawOrderType && rawOrderType !== 'retail') {
+    normalized.legacyOrderType = rawOrderType;
+  }
+  if (rawTableNumber) {
+    normalized.legacyTableNumber = rawTableNumber;
+  }
+
+  return normalized;
+}
+
+function normalizeDataset({ settings, categories, products, transactions }) {
+  const safeSettings = normalizeSettings(settings);
+  const rawCats = Array.isArray(categories) ? categories : [];
+  const safeCategories = rawCats.map((c, idx) => normalizeCategory(c, idx));
+  const validCatIds = new Set(safeCategories.map((c) => c.id));
+  const fallbackCatId = safeCategories[0]?.id || '';
+  const safeProducts = (Array.isArray(products) ? products : []).map((p) => {
+    const prod = normalizeProduct(p, '');
+    if (prod.categoryId && !validCatIds.has(prod.categoryId)) {
+      prod.categoryId = fallbackCatId;
+    }
+    return prod;
+  });
+  const safeTransactions = (Array.isArray(transactions) ? transactions : []).map(normalizeTransaction);
+
+  return {
+    settings: safeSettings,
+    categories: safeCategories,
+    products: safeProducts,
+    transactions: safeTransactions,
+  };
+}
+
+function applyDatasetToState(dataset) {
+  state.settings = dataset.settings;
+  state.categories = dataset.categories;
+  state.products = dataset.products;
+  state.transactions = dataset.transactions;
+  state.initialized = true;
+  setLanguage(state.settings.language);
+  syncAppearancePrefsStorage(state.settings);
 }
 
 function cloneProduct(p) {
@@ -300,23 +401,61 @@ function ensureInitialized() {
   }
 }
 
-function syncThemePrefStorage(theme) {
-  try {
-    if (theme === 'light' || theme === 'dark' || theme === 'system') {
-      window.localStorage.setItem(STORAGE_KEYS.themePref, theme);
-    }
-  } catch {
-    // Ignore theme preference storage sync error
-  }
-}
-
 function writeAllToStorage(nextSettings, nextCategories, nextProducts, nextTransactions) {
   persistKey(STORAGE_KEYS.settings, nextSettings);
   persistKey(STORAGE_KEYS.categories, nextCategories);
   persistKey(STORAGE_KEYS.products, nextProducts);
   persistKey(STORAGE_KEYS.transactions, nextTransactions);
   persistKey(STORAGE_KEYS.seeded, '1');
-  syncThemePrefStorage(nextSettings?.theme);
+  syncAppearancePrefsStorage(nextSettings);
+}
+
+function persistLocalOnly(key, value) {
+  if (cloudAdapter) return;
+  persistKey(key, value);
+}
+
+function runCloudWrite(fn) {
+  if (!cloudAdapter) return Promise.resolve();
+  const adapter = cloudAdapter;
+  const sessionAtCall = cloudSessionSeq;
+  pendingCloudWriteCount += 1;
+  const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  updateSyncStatus({
+    state: isOffline ? 'offline' : 'syncing',
+    pendingWrites: true,
+    errorCode: null,
+    errorMessage: '',
+  });
+
+  return Promise.resolve()
+    .then(() => fn(adapter))
+    .then(() => {
+      if (sessionAtCall !== cloudSessionSeq) return;
+      pendingCloudWriteCount = Math.max(0, pendingCloudWriteCount - 1);
+      const stillOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+      if (pendingCloudWriteCount === 0) {
+        updateSyncStatus({
+          state: stillOffline ? 'offline' : 'synced',
+          pendingWrites: stillOffline,
+          lastSyncedAt: stillOffline ? syncStatus.lastSyncedAt : new Date().toISOString(),
+          errorCode: null,
+          errorMessage: '',
+        });
+      }
+    })
+    .catch((err) => {
+      if (sessionAtCall !== cloudSessionSeq) return;
+      pendingCloudWriteCount = Math.max(0, pendingCloudWriteCount - 1);
+      console.error('[AruPOS cloud write]', err);
+      const code = err?.code || 'write-error';
+      updateSyncStatus({
+        state: typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'error',
+        pendingWrites: false,
+        errorCode: code,
+        errorMessage: err?.message || '',
+      });
+    });
 }
 
 function generateReceiptNoForDate(createdAt) {
@@ -352,60 +491,541 @@ function generateReceiptNoForDate(createdAt) {
   return `${prefix}${String(nextSeq).padStart(3, '0')}`;
 }
 
+function escapeCsvCell(value) {
+  let str = String(value ?? '');
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
+  if (/[",\n\r]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function sortById(list) {
+  return [...list].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+}
+
+function listEquals(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function buildCloudListenerHandlers(sessionSeq) {
+  return {
+    onSettings: (rawSettings) => {
+      if (sessionSeq !== cloudSessionSeq || !rawSettings) return;
+      const prev = state.settings;
+      const next = normalizeSettings({ ...rawSettings, setupCompleted: true });
+      if (JSON.stringify(prev) === JSON.stringify(next)) return;
+      const changedKeys = Object.keys(next).filter((k) => next[k] !== prev[k]);
+      state.settings = next;
+      setLanguage(next.language);
+      syncAppearancePrefsStorage(next);
+      const emitted = { ...next };
+      Object.defineProperty(emitted, '_changedKeys', {
+        value: changedKeys,
+        enumerable: false,
+      });
+      bus.emit('settings:changed', emitted);
+    },
+
+    onCategories: (rawCategories) => {
+      if (sessionSeq !== cloudSessionSeq || !Array.isArray(rawCategories)) return;
+      const next = rawCategories.map((c, idx) => normalizeCategory(c, idx));
+      if (listEquals(sortById(state.categories), sortById(next))) return;
+      state.categories = next;
+      bus.emit('categories:changed', { action: 'sync' });
+    },
+
+    onProducts: (rawProducts) => {
+      if (sessionSeq !== cloudSessionSeq || !Array.isArray(rawProducts)) return;
+      const next = rawProducts.map((p) => normalizeProduct(p, ''));
+      if (listEquals(sortById(state.products), sortById(next))) return;
+      state.products = next;
+      bus.emit('products:changed', { action: 'sync' });
+    },
+
+    onTransactions: (rawTxs) => {
+      if (sessionSeq !== cloudSessionSeq || !Array.isArray(rawTxs)) return;
+      const next = rawTxs.map(normalizeTransaction);
+      if (listEquals(sortById(state.transactions), sortById(next))) return;
+      state.transactions = next;
+      bus.emit('transactions:changed', { action: 'sync' });
+    },
+
+    onSyncChange: ({ offline, pendingWrites, syncedAt } = {}) => {
+      if (sessionSeq !== cloudSessionSeq) return;
+      const combinedPending = Boolean(pendingWrites) || pendingCloudWriteCount > 0;
+      const nextState = offline
+        ? 'offline'
+        : combinedPending
+          ? 'syncing'
+          : 'synced';
+      updateSyncStatus({
+        state: nextState,
+        pendingWrites: combinedPending,
+        lastSyncedAt: syncedAt || (nextState === 'synced' ? syncStatus.lastSyncedAt || new Date().toISOString() : syncStatus.lastSyncedAt),
+        errorCode: null,
+        errorMessage: '',
+      });
+    },
+
+    onError: (err) => {
+      if (sessionSeq !== cloudSessionSeq) return;
+      updateSyncStatus({
+        state: typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'error',
+        errorCode: err?.code || 'sync-error',
+        errorMessage: err?.message || '',
+      });
+    },
+  };
+}
+
+function attachCloudListeners(adapter, sessionSeq) {
+  if (cloudUnsub) {
+    cloudUnsub();
+    cloudUnsub = null;
+  }
+  if (typeof adapter?.subscribeAll !== 'function') return;
+
+  cloudUnsub = adapter.subscribeAll(buildCloudListenerHandlers(sessionSeq));
+}
+
+function readRawLocalStore() {
+  return {
+    seeded: safeReadStorage(STORAGE_KEYS.seeded),
+    settings: safeParseJson(safeReadStorage(STORAGE_KEYS.settings)),
+    categories: safeParseJson(safeReadStorage(STORAGE_KEYS.categories)),
+    products: safeParseJson(safeReadStorage(STORAGE_KEYS.products)),
+    transactions: safeParseJson(safeReadStorage(STORAGE_KEYS.transactions)),
+  };
+}
+
 export const store = {
   init() {
-    const seededFlag = safeReadStorage(STORAGE_KEYS.seeded);
-    const rawSettings = safeParseJson(safeReadStorage(STORAGE_KEYS.settings));
-    const rawCategories = safeParseJson(safeReadStorage(STORAGE_KEYS.categories));
-    const rawProducts = safeParseJson(safeReadStorage(STORAGE_KEYS.products));
-    const rawTransactions = safeParseJson(safeReadStorage(STORAGE_KEYS.transactions));
+    const raw = readRawLocalStore();
+    const prefs = readAppearancePrefs();
+    const hasLocalStore =
+      raw.seeded === '1' ||
+      (raw.settings && typeof raw.settings === 'object' && !Array.isArray(raw.settings)) ||
+      Array.isArray(raw.categories) ||
+      Array.isArray(raw.products) ||
+      Array.isArray(raw.transactions);
 
-    const hasValidStore =
-      seededFlag === '1' &&
-      rawSettings &&
-      typeof rawSettings === 'object' &&
-      !Array.isArray(rawSettings) &&
-      Array.isArray(rawCategories) &&
-      rawCategories.length > 0 &&
-      Array.isArray(rawProducts) &&
-      Array.isArray(rawTransactions);
-
-    if (!hasValidStore) {
-      const seed = createSeedData();
-      state.settings = normalizeSettings(seed.settings);
-      setLanguage(state.settings.language);
-      state.categories = seed.categories.map(normalizeCategory);
-      const fallbackCatId = state.categories[0]?.id || 'cat_minuman';
-      state.products = seed.products.map((p) => normalizeProduct(p, fallbackCatId));
-      state.transactions = seed.transactions.map(normalizeTransaction);
-      state.initialized = true;
-      try {
-        writeAllToStorage(
-          state.settings,
-          state.categories,
-          state.products,
-          state.transactions
-        );
-      } catch (err) {
-        console.error('[AruPOS store] gagal menyimpan data awal:', err);
-      }
+    if (!hasLocalStore) {
+      // Truly empty by default — zero built-in sample/demo data
+      const dataset = normalizeDataset({
+        settings: { ...DEFAULT_SETTINGS, ...prefs },
+        categories: [],
+        products: [],
+        transactions: [],
+      });
+      applyDatasetToState(dataset);
       return;
     }
 
-    state.settings = normalizeSettings(rawSettings);
-    setLanguage(state.settings.language);
-    state.categories = rawCategories.map(normalizeCategory);
-    const validCatIds = new Set(state.categories.map((c) => c.id));
-    const fallbackCatId = state.categories[0].id;
-    state.products = rawProducts.map((p) => {
-      const normalized = normalizeProduct(p, fallbackCatId);
-      if (!validCatIds.has(normalized.categoryId)) {
-        normalized.categoryId = fallbackCatId;
-      }
-      return normalized;
+    const dataset = normalizeDataset({
+      settings: raw.settings && typeof raw.settings === 'object' ? { ...prefs, ...raw.settings } : prefs,
+      categories: Array.isArray(raw.categories) ? raw.categories : [],
+      products: Array.isArray(raw.products) ? raw.products : [],
+      transactions: Array.isArray(raw.transactions) ? raw.transactions : [],
     });
-    state.transactions = rawTransactions.map(normalizeTransaction);
-    state.initialized = true;
+    applyDatasetToState(dataset);
+  },
+
+  // --- Cloud, Auth Session & Setup Wizard ---
+  getCurrentUser() {
+    return currentUser ? { ...currentUser } : null;
+  },
+
+  getSyncStatus() {
+    return { ...syncStatus };
+  },
+
+  hasLegacyLocalStorageKeys() {
+    const raw = readRawLocalStore();
+    return Boolean(
+      raw.seeded === '1' ||
+      raw.settings ||
+      Array.isArray(raw.categories) ||
+      Array.isArray(raw.products) ||
+      Array.isArray(raw.transactions)
+    );
+  },
+
+  getLocalMigrationCandidate() {
+    const raw = readRawLocalStore();
+    const hasLocal =
+      raw.seeded === '1' ||
+      (Array.isArray(raw.categories) && raw.categories.length > 0) ||
+      (Array.isArray(raw.products) && raw.products.length > 0) ||
+      (Array.isArray(raw.transactions) && raw.transactions.length > 0);
+
+    if (!hasLocal) return null;
+
+    const filtered = filterLocalDataForMigration(raw);
+    if (!filtered.hasRealData) {
+      return null;
+    }
+
+    const normalized = normalizeDataset(filtered.data);
+    return {
+      data: normalized,
+      counts: {
+        categories: normalized.categories.length,
+        products: normalized.products.length,
+        transactions: normalized.transactions.length,
+      },
+      excludedDemoCount: filtered.excludedDemoCount,
+      customProfile: filtered.customProfile,
+    };
+  },
+
+  getLocalProfileSuggestion() {
+    const raw = readRawLocalStore();
+    const filtered = filterLocalDataForMigration(raw);
+    return filtered.customProfile;
+  },
+
+  clearLocalLegacyData() {
+    try {
+      window.localStorage.removeItem(STORAGE_KEYS.products);
+      window.localStorage.removeItem(STORAGE_KEYS.categories);
+      window.localStorage.removeItem(STORAGE_KEYS.transactions);
+      window.localStorage.removeItem(STORAGE_KEYS.settings);
+      window.localStorage.removeItem(STORAGE_KEYS.seeded);
+    } catch {
+      // Ignore storage removal errors
+    }
+  },
+
+  async connectCloud(user, adapter) {
+    if (cloudUnsub) {
+      cloudUnsub();
+      cloudUnsub = null;
+    }
+
+    const sessionSeq = ++cloudSessionSeq;
+    pendingCloudWriteCount = 0;
+
+    currentUser = user
+      ? {
+          uid: user.uid,
+          displayName: user.displayName || user.email || 'Pengguna',
+          email: user.email || '',
+          photoURL: user.photoURL || '',
+        }
+      : null;
+    cloudAdapter = adapter || null;
+
+    const initialOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    updateSyncStatus({
+      state: initialOffline ? 'offline' : 'syncing',
+      pendingWrites: false,
+      errorCode: null,
+      errorMessage: '',
+    });
+
+    let cloudData;
+    try {
+      if (typeof adapter?.openSession === 'function') {
+        const sessionRes = await adapter.openSession(buildCloudListenerHandlers(sessionSeq));
+        if (sessionSeq !== cloudSessionSeq) {
+          sessionRes?.unsubscribe?.();
+          return { ok: false, stale: true };
+        }
+        cloudData = sessionRes.initialData;
+        cloudUnsub = typeof sessionRes.unsubscribe === 'function' ? sessionRes.unsubscribe : null;
+      } else {
+        cloudData = await adapter.fetchInitialCloudData();
+      }
+    } catch (err) {
+      if (sessionSeq !== cloudSessionSeq) return { ok: false, stale: true };
+      const code = err?.code || 'fetch-error';
+      this.init();
+      updateSyncStatus({
+        state: typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'error',
+        pendingWrites: false,
+        errorCode: code,
+        errorMessage: err?.message || '',
+      });
+      return { ok: false, errorCode: code, error: err, needsSetup: false };
+    }
+
+    if (sessionSeq !== cloudSessionSeq) return { ok: false, stale: true };
+
+    const cloudCategories = Array.isArray(cloudData?.categories) ? cloudData.categories : [];
+    const cloudProducts = Array.isArray(cloudData?.products) ? cloudData.products : [];
+    const cloudTransactions = Array.isArray(cloudData?.transactions) ? cloudData.transactions : [];
+    const rawSettings = cloudData?.settings && typeof cloudData.settings === 'object' ? cloudData.settings : null;
+    const cloudHasCompletedSettings = Boolean(
+      rawSettings && (rawSettings.setupCompleted === true || String(rawSettings.storeName || '').trim() !== '')
+    );
+    const cloudHasData =
+      cloudHasCompletedSettings ||
+      cloudCategories.length > 0 ||
+      cloudProducts.length > 0 ||
+      cloudTransactions.length > 0;
+
+    if (!cloudHasData) {
+      // Brand-new account with empty cloud -> keep empty state and trigger simplified Setup Wizard
+      const prefs = readAppearancePrefs();
+      applyDatasetToState(
+        normalizeDataset({
+          settings: { ...DEFAULT_SETTINGS, ...prefs, setupCompleted: false },
+          categories: [],
+          products: [],
+          transactions: [],
+        })
+      );
+      return {
+        ok: true,
+        needsSetup: true,
+        localMigrationCandidate: this.getLocalMigrationCandidate(),
+        profileSuggestion: this.getLocalProfileSuggestion(),
+      };
+    }
+
+    const prefs = readAppearancePrefs();
+    const mergedSettings = rawSettings
+      ? { ...rawSettings, setupCompleted: true }
+      : { ...DEFAULT_SETTINGS, ...prefs, setupCompleted: true };
+
+    const dataset = normalizeDataset({
+      settings: mergedSettings,
+      categories: cloudCategories,
+      products: cloudProducts,
+      transactions: cloudTransactions,
+    });
+    applyDatasetToState(dataset);
+
+    if (!cloudUnsub) {
+      attachCloudListeners(adapter, sessionSeq);
+    }
+
+    const nowOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    updateSyncStatus({
+      state: nowOnline ? 'synced' : 'offline',
+      pendingWrites: false,
+      lastSyncedAt: nowOnline ? new Date().toISOString() : null,
+      errorCode: null,
+      errorMessage: '',
+    });
+
+    bus.emit('store:reset', { source: 'cloud-connect' });
+    return { ok: true, needsSetup: false };
+  },
+
+  async completeSetup({
+    storeName,
+    storeAddress = '',
+    storePhone = '',
+    receiptFooter = '',
+    importLocal = false,
+  } = {}) {
+    const cleanName = String(storeName || '').trim();
+    if (!cleanName) {
+      throw new Error(t('wizard.errStoreNameRequired'));
+    }
+
+    const sessionSeq = cloudSessionSeq;
+    const prefs = readAppearancePrefs();
+    const candidate = importLocal ? this.getLocalMigrationCandidate() : null;
+    const baseSettings = candidate?.data?.settings || {};
+
+    const nextSettings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      ...baseSettings,
+      ...prefs,
+      storeName: cleanName,
+      storeAddress: String(storeAddress || '').trim(),
+      storePhone: String(storePhone || '').trim(),
+      receiptFooter: String(receiptFooter || '').trim(),
+      setupCompleted: true,
+    });
+
+    const dataset = candidate
+      ? {
+          settings: nextSettings,
+          categories: candidate.data.categories,
+          products: candidate.data.products,
+          transactions: candidate.data.transactions,
+        }
+      : {
+          settings: nextSettings,
+          categories: [],
+          products: [],
+          transactions: [],
+        };
+
+    if (cloudAdapter) {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new Error(t('wizard.offlineImportError'));
+      }
+
+      updateSyncStatus({
+        state: 'syncing',
+        pendingWrites: true,
+        errorCode: null,
+        errorMessage: '',
+      });
+
+      await cloudAdapter.writeFullDataset(dataset);
+      if (sessionSeq !== cloudSessionSeq) return { ok: false, stale: true };
+
+      if (importLocal || !this.getLocalMigrationCandidate()) {
+        // Clear legacy local keys only after cloud commit succeeds
+        this.clearLocalLegacyData();
+      }
+
+      applyDatasetToState(dataset);
+      if (!cloudUnsub) {
+        attachCloudListeners(cloudAdapter, sessionSeq);
+      }
+    } else {
+      applyDatasetToState(dataset);
+      writeAllToStorage(
+        dataset.settings,
+        dataset.categories,
+        dataset.products,
+        dataset.transactions
+      );
+    }
+
+    const nowOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    updateSyncStatus({
+      state: nowOnline ? 'synced' : 'offline',
+      pendingWrites: false,
+      lastSyncedAt: nowOnline ? new Date().toISOString() : null,
+      errorCode: null,
+      errorMessage: '',
+    });
+
+    bus.emit('products:changed', { action: 'setup' });
+    bus.emit('categories:changed', { action: 'setup' });
+    bus.emit('transactions:changed', { action: 'setup' });
+    bus.emit('settings:changed', this.getSettings());
+    bus.emit('store:reset', { source: 'setup' });
+
+    return {
+      ok: true,
+      importedLocal: Boolean(candidate),
+      counts: {
+        categories: dataset.categories.length,
+        products: dataset.products.length,
+        transactions: dataset.transactions.length,
+      },
+    };
+  },
+
+  getDemoDataCounts() {
+    ensureInitialized();
+    const demoProducts = state.products.filter((p) => p.isDemo === true);
+    const demoTransactions = state.transactions.filter((tx) => tx.isDemo === true);
+    const nonDemoProductCatIds = new Set(
+      state.products.filter((p) => p.isDemo !== true && p.categoryId).map((p) => p.categoryId)
+    );
+    const emptyDemoCategories = state.categories.filter(
+      (c) => c.isDemo === true && !nonDemoProductCatIds.has(c.id)
+    );
+    const products = demoProducts.length;
+    const transactions = demoTransactions.length;
+    const categories = emptyDemoCategories.length;
+    return {
+      products,
+      transactions,
+      categories,
+      total: products + transactions + categories,
+    };
+  },
+
+  hasDemoData() {
+    return this.getDemoDataCounts().total > 0;
+  },
+
+  deleteSampleData() {
+    ensureInitialized();
+    const demoProductIds = state.products.filter((p) => p.isDemo === true).map((p) => p.id);
+    const demoTxIds = state.transactions.filter((tx) => tx.isDemo === true).map((tx) => tx.id);
+
+    const survivingProducts = state.products.filter((p) => p.isDemo !== true);
+    const survivingTransactions = state.transactions.filter((tx) => tx.isDemo !== true);
+    const usedCatIds = new Set(
+      survivingProducts.map((p) => p.categoryId).filter(Boolean)
+    );
+
+    const deletedCategoryIds = [];
+    const upsertedCategories = [];
+    const survivingCategories = [];
+
+    for (const cat of state.categories) {
+      if (cat.isDemo === true) {
+        if (usedCatIds.has(cat.id)) {
+          const adopted = { ...cat, isDemo: false };
+          survivingCategories.push(adopted);
+          upsertedCategories.push(adopted);
+        } else {
+          deletedCategoryIds.push(cat.id);
+        }
+      } else {
+        survivingCategories.push(cat);
+      }
+    }
+
+    state.categories = survivingCategories;
+    state.products = survivingProducts;
+    state.transactions = survivingTransactions;
+
+    if (!cloudAdapter) {
+      persistLocalOnly(STORAGE_KEYS.categories, survivingCategories);
+      persistLocalOnly(STORAGE_KEYS.products, survivingProducts);
+      persistLocalOnly(STORAGE_KEYS.transactions, survivingTransactions);
+    } else {
+      runCloudWrite((adapter) =>
+        adapter.deleteSampleDocs({
+          productIds: demoProductIds,
+          transactionIds: demoTxIds,
+          categoryIds: deletedCategoryIds,
+          upsertCategories: upsertedCategories,
+        })
+      );
+    }
+
+    bus.emit('categories:changed', { action: 'delete-sample' });
+    bus.emit('products:changed', { action: 'delete-sample' });
+    bus.emit('transactions:changed', { action: 'delete-sample' });
+
+    return {
+      ok: true,
+      deletedProducts: demoProductIds.length,
+      deletedTransactions: demoTxIds.length,
+      deletedCategories: deletedCategoryIds.length,
+    };
+  },
+
+  disconnectCloud() {
+    cloudSessionSeq += 1;
+    pendingCloudWriteCount = 0;
+    if (cloudUnsub) {
+      cloudUnsub();
+      cloudUnsub = null;
+    }
+    cloudAdapter = null;
+    currentUser = null;
+    const prefs = readAppearancePrefs();
+    state.initialized = false;
+    state.categories = [];
+    state.products = [];
+    state.transactions = [];
+    state.settings = normalizeSettings({ ...DEFAULT_SETTINGS, ...prefs });
+    syncStatus = {
+      state: 'idle',
+      lastSyncedAt: null,
+      pendingWrites: false,
+      errorCode: null,
+      errorMessage: '',
+    };
+    emitSyncStatus();
   },
 
   // --- Products ---
@@ -439,8 +1059,13 @@ export const store = {
       throw new Error(t('store.productStockInvalid'));
     }
 
-    const catExists = state.categories.some((c) => c.id === data?.categoryId);
-    const categoryId = catExists ? data.categoryId : state.categories[0]?.id || 'cat_minuman';
+    let categoryId = '';
+    if (data?.categoryId === undefined) {
+      categoryId = state.categories[0]?.id || '';
+    } else if (data.categoryId) {
+      const catExists = state.categories.some((c) => c.id === data.categoryId);
+      categoryId = catExists ? data.categoryId : '';
+    }
 
     const created = {
       id: uid('prd'),
@@ -449,15 +1074,16 @@ export const store = {
       categoryId,
       sku: String(data?.sku || '').trim().toUpperCase(),
       stock,
-      emoji: String(data?.emoji || '📦').trim() || '📦',
       image: typeof data?.image === 'string' ? data.image : '',
       active: data?.active === undefined ? true : Boolean(data.active),
+      isDemo: false,
       createdAt: new Date().toISOString(),
     };
 
     const nextProducts = [...state.products, created];
-    persistKey(STORAGE_KEYS.products, nextProducts);
+    persistLocalOnly(STORAGE_KEYS.products, nextProducts);
     state.products = nextProducts;
+    runCloudWrite((adapter) => adapter.saveProduct(created));
 
     const cloned = cloneProduct(created);
     bus.emit('products:changed', { action: 'add', product: cloned });
@@ -499,16 +1125,16 @@ export const store = {
     }
 
     if (patch?.categoryId !== undefined) {
-      const validCat = state.categories.some((c) => c.id === patch.categoryId);
-      next.categoryId = validCat ? patch.categoryId : current.categoryId;
+      if (patch.categoryId === '') {
+        next.categoryId = '';
+      } else {
+        const validCat = state.categories.some((c) => c.id === patch.categoryId);
+        next.categoryId = validCat ? patch.categoryId : current.categoryId;
+      }
     }
 
     if (patch?.sku !== undefined) {
       next.sku = String(patch.sku || '').trim().toUpperCase();
-    }
-
-    if (patch?.emoji !== undefined) {
-      next.emoji = String(patch.emoji || '📦').trim() || '📦';
     }
 
     if (patch?.image !== undefined) {
@@ -519,10 +1145,20 @@ export const store = {
       next.active = Boolean(patch.active);
     }
 
+    if (
+      patch?.name !== undefined ||
+      patch?.price !== undefined ||
+      patch?.sku !== undefined ||
+      (typeof patch?.image === 'string' && patch.image.trim() !== '')
+    ) {
+      next.isDemo = false;
+    }
+
     const nextProducts = [...state.products];
     nextProducts[idx] = next;
-    persistKey(STORAGE_KEYS.products, nextProducts);
+    persistLocalOnly(STORAGE_KEYS.products, nextProducts);
     state.products = nextProducts;
+    runCloudWrite((adapter) => adapter.saveProduct(next));
 
     const cloned = cloneProduct(next);
     bus.emit('products:changed', { action: 'update', product: cloned });
@@ -535,8 +1171,9 @@ export const store = {
     if (idx === -1) return false;
 
     const nextProducts = state.products.filter((p) => p.id !== id);
-    persistKey(STORAGE_KEYS.products, nextProducts);
+    persistLocalOnly(STORAGE_KEYS.products, nextProducts);
     state.products = nextProducts;
+    runCloudWrite((adapter) => adapter.deleteProduct(id));
 
     bus.emit('products:changed', { action: 'delete', id });
     return true;
@@ -554,8 +1191,9 @@ export const store = {
     const updated = { ...current, stock: nextStock };
     const nextProducts = [...state.products];
     nextProducts[idx] = updated;
-    persistKey(STORAGE_KEYS.products, nextProducts);
+    persistLocalOnly(STORAGE_KEYS.products, nextProducts);
     state.products = nextProducts;
+    runCloudWrite((adapter) => adapter.saveProduct(updated));
 
     const cloned = cloneProduct(updated);
     bus.emit('products:changed', { action: 'stock', product: cloned });
@@ -568,7 +1206,7 @@ export const store = {
     return state.categories.map(cloneCategory);
   },
 
-  addCategory({ name, icon, emoji = '🏷️', color } = {}) {
+  addCategory({ name, icon, color } = {}) {
     ensureInitialized();
     const cleanName = String(name || '').trim();
     if (!cleanName) {
@@ -586,20 +1224,20 @@ export const store = {
       DEFAULT_CATEGORY_COLORS[state.categories.length % DEFAULT_CATEGORY_COLORS.length];
     const cleanColor =
       typeof color === 'string' && HEX_COLOR_RE.test(color.trim()) ? color.trim() : fallbackColor;
-    const cleanEmoji = String(emoji || '🏷️').trim() || '🏷️';
-    const cleanIcon = getCategoryIconName({ name: cleanName, icon, emoji: cleanEmoji });
+    const cleanIcon = getCategoryIconName({ name: cleanName, icon });
 
     const created = {
       id: uid('cat'),
       name: cleanName,
       icon: cleanIcon,
-      emoji: cleanEmoji,
       color: cleanColor,
+      isDemo: false,
     };
 
     const nextCategories = [...state.categories, created];
-    persistKey(STORAGE_KEYS.categories, nextCategories);
+    persistLocalOnly(STORAGE_KEYS.categories, nextCategories);
     state.categories = nextCategories;
+    runCloudWrite((adapter) => adapter.saveCategory(created));
 
     const cloned = cloneCategory(created);
     bus.emit('categories:changed', { action: 'add', category: cloned });
@@ -634,10 +1272,6 @@ export const store = {
       next.icon = getCategoryIconName({ icon: patch.icon, name: next.name });
     }
 
-    if (patch?.emoji !== undefined) {
-      next.emoji = String(patch.emoji || '🏷️').trim() || '🏷️';
-    }
-
     if (patch?.color !== undefined) {
       next.color =
         typeof patch.color === 'string' && HEX_COLOR_RE.test(patch.color.trim())
@@ -645,10 +1279,19 @@ export const store = {
           : current.color;
     }
 
+    if (
+      patch?.name !== undefined ||
+      patch?.icon !== undefined ||
+      patch?.color !== undefined
+    ) {
+      next.isDemo = false;
+    }
+
     const nextCategories = [...state.categories];
     nextCategories[idx] = next;
-    persistKey(STORAGE_KEYS.categories, nextCategories);
+    persistLocalOnly(STORAGE_KEYS.categories, nextCategories);
     state.categories = nextCategories;
+    runCloudWrite((adapter) => adapter.saveCategory(next));
 
     const cloned = cloneCategory(next);
     bus.emit('categories:changed', { action: 'update', category: cloned });
@@ -657,33 +1300,31 @@ export const store = {
 
   deleteCategory(id) {
     ensureInitialized();
-    if (state.categories.length <= 1) {
-      throw new Error(t('store.categoryMinOne'));
-    }
-
     const exists = state.categories.some((c) => c.id === id);
     if (!exists) return false;
 
     const nextCategories = state.categories.filter((c) => c.id !== id);
-    const fallbackCategoryId = nextCategories[0].id;
+    const fallbackCategoryId = nextCategories[0]?.id || '';
 
-    let reassignedCount = 0;
+    const reassignedProducts = [];
     const nextProducts = state.products.map((product) => {
       if (product.categoryId === id) {
-        reassignedCount += 1;
-        return { ...product, categoryId: fallbackCategoryId };
+        const updated = { ...product, categoryId: fallbackCategoryId };
+        reassignedProducts.push(updated);
+        return updated;
       }
       return product;
     });
 
-    persistKey(STORAGE_KEYS.categories, nextCategories);
-    persistKey(STORAGE_KEYS.products, nextProducts);
+    persistLocalOnly(STORAGE_KEYS.categories, nextCategories);
+    persistLocalOnly(STORAGE_KEYS.products, nextProducts);
     state.categories = nextCategories;
     state.products = nextProducts;
+    runCloudWrite((adapter) => adapter.deleteCategoryWithReassign(id, reassignedProducts));
 
     bus.emit('categories:changed', { action: 'delete', id, fallbackCategoryId });
     bus.emit('products:changed', { action: 'category-reassigned', fromId: id, toId: fallbackCategoryId });
-    return { ok: true, reassignedCount, fallbackCategoryId };
+    return { ok: true, reassignedCount: reassignedProducts.length, fallbackCategoryId };
   },
 
   // --- Transactions ---
@@ -708,40 +1349,37 @@ export const store = {
     ensureInitialized();
     const createdAt = new Date().toISOString();
     const receiptNo = generateReceiptNoForDate(createdAt);
-    const currentMode = state.settings.mode === 'fnb' ? 'fnb' : 'retail';
-    const shouldDeductStock = currentMode === 'retail';
 
     const items = Array.isArray(txInput?.items) ? txInput.items.map(normalizeTxItem) : [];
     if (items.length === 0) {
       throw new Error(t('store.cartEmpty'));
     }
 
-    let stockChanged = false;
+    const deductByProductId = new Map();
+    for (const item of items) {
+      if (!item.productId) continue;
+      const qty = Math.max(0, Math.round(Number(item.qty) || 0));
+      if (qty <= 0) continue;
+      deductByProductId.set(
+        item.productId,
+        (deductByProductId.get(item.productId) || 0) + qty
+      );
+    }
+
+    const updatedProducts = [];
     let nextProducts = state.products;
 
-    if (shouldDeductStock) {
-      const deductByProductId = new Map();
-      for (const item of items) {
-        if (!item.productId) continue;
-        const qty = Math.max(0, Math.round(Number(item.qty) || 0));
-        if (qty <= 0) continue;
-        deductByProductId.set(
-          item.productId,
-          (deductByProductId.get(item.productId) || 0) + qty
-        );
-      }
-
-      if (deductByProductId.size > 0) {
-        nextProducts = state.products.map((product) => {
-          const deductQty = deductByProductId.get(product.id);
-          if (!deductQty) return product;
-          stockChanged = true;
-          return {
-            ...product,
-            stock: Math.max(0, product.stock - deductQty),
-          };
-        });
-      }
+    if (deductByProductId.size > 0) {
+      nextProducts = state.products.map((product) => {
+        const deductQty = deductByProductId.get(product.id);
+        if (!deductQty) return product;
+        const updated = {
+          ...product,
+          stock: Math.max(0, product.stock - deductQty),
+        };
+        updatedProducts.push(updated);
+        return updated;
+      });
     }
 
     const tx = normalizeTransaction({
@@ -752,22 +1390,23 @@ export const store = {
       status: 'completed',
       voidedAt: null,
       voidReason: '',
-      mode: currentMode,
-      stockDeducted: shouldDeductStock,
+      stockDeducted: true,
+      isDemo: false,
       items,
     });
 
     const nextTransactions = [tx, ...state.transactions];
-    persistKey(STORAGE_KEYS.transactions, nextTransactions);
-    if (stockChanged) {
-      persistKey(STORAGE_KEYS.products, nextProducts);
+    persistLocalOnly(STORAGE_KEYS.transactions, nextTransactions);
+    if (updatedProducts.length > 0) {
+      persistLocalOnly(STORAGE_KEYS.products, nextProducts);
       state.products = nextProducts;
     }
     state.transactions = nextTransactions;
+    runCloudWrite((adapter) => adapter.saveTransactionAndProducts(tx, updatedProducts));
 
     const cloned = cloneTransaction(tx);
     bus.emit('transactions:changed', { action: 'create', transaction: cloned });
-    if (stockChanged) {
+    if (updatedProducts.length > 0) {
       bus.emit('products:changed', { action: 'sale-deduct', transactionId: cloned.id });
     }
     return cloned;
@@ -792,7 +1431,7 @@ export const store = {
       voidReason: String(reason || t('store.defaultVoidReason')).trim() || t('store.defaultVoidReason'),
     };
 
-    let stockRestored = false;
+    const restoredProducts = [];
     let nextProducts = state.products;
 
     if (current.stockDeducted === true && Array.isArray(current.items)) {
@@ -811,11 +1450,12 @@ export const store = {
         nextProducts = state.products.map((product) => {
           const restoreQty = restoreByProductId.get(product.id);
           if (!restoreQty) return product;
-          stockRestored = true;
-          return {
+          const updated = {
             ...product,
             stock: product.stock + restoreQty,
           };
+          restoredProducts.push(updated);
+          return updated;
         });
       }
     }
@@ -823,22 +1463,23 @@ export const store = {
     const nextTransactions = [...state.transactions];
     nextTransactions[idx] = voidedTx;
 
-    persistKey(STORAGE_KEYS.transactions, nextTransactions);
-    if (stockRestored) {
-      persistKey(STORAGE_KEYS.products, nextProducts);
+    persistLocalOnly(STORAGE_KEYS.transactions, nextTransactions);
+    if (restoredProducts.length > 0) {
+      persistLocalOnly(STORAGE_KEYS.products, nextProducts);
       state.products = nextProducts;
     }
     state.transactions = nextTransactions;
+    runCloudWrite((adapter) => adapter.saveTransactionAndProducts(voidedTx, restoredProducts));
 
     const cloned = cloneTransaction(voidedTx);
     bus.emit('transactions:changed', { action: 'void', transaction: cloned });
-    if (stockRestored) {
+    if (restoredProducts.length > 0) {
       bus.emit('products:changed', { action: 'void-restore', transactionId: cloned.id });
     }
     return { ok: true, transaction: cloned };
   },
 
-  // --- Settings & Backup ---
+  // --- Settings & Export ---
   getSettings() {
     ensureInitialized();
     return { ...state.settings };
@@ -856,10 +1497,11 @@ export const store = {
       (k) => nextSettings[k] !== prevSettings[k]
     );
 
-    persistKey(STORAGE_KEYS.settings, nextSettings);
-    syncThemePrefStorage(nextSettings.theme);
+    persistLocalOnly(STORAGE_KEYS.settings, nextSettings);
+    syncAppearancePrefsStorage(nextSettings);
     state.settings = nextSettings;
     setLanguage(nextSettings.language);
+    runCloudWrite((adapter) => adapter.saveSettings(nextSettings));
 
     const emitted = { ...nextSettings };
     Object.defineProperty(emitted, '_changedKeys', {
@@ -874,7 +1516,7 @@ export const store = {
     ensureInitialized();
     const payload = {
       app: 'AruPOS',
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       settings: this.getSettings(),
       categories: this.getCategories(),
@@ -884,93 +1526,63 @@ export const store = {
     return JSON.stringify(payload, null, 2);
   },
 
-  importAllData(jsonStr) {
+  exportProductsCsv() {
     ensureInitialized();
-    let parsed;
-    try {
-      parsed = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
-    } catch {
-      throw new Error(t('store.backupInvalidJson'));
-    }
-
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error(t('store.backupInvalidStructure'));
-    }
-
-    if (
-      !parsed.settings ||
-      typeof parsed.settings !== 'object' ||
-      Array.isArray(parsed.settings) ||
-      !Array.isArray(parsed.categories) ||
-      !Array.isArray(parsed.products) ||
-      !Array.isArray(parsed.transactions)
-    ) {
-      throw new Error(t('store.backupIncomplete'));
-    }
-
-    if (parsed.categories.length === 0) {
-      throw new Error(t('store.backupNoCategories'));
-    }
-
-    const nextSettings = normalizeSettings(parsed.settings);
-    setLanguage(nextSettings.language);
-    const nextCategories = parsed.categories.map(normalizeCategory);
-    const validCatIds = new Set(nextCategories.map((c) => c.id));
-    const fallbackCatId = nextCategories[0].id;
-    const nextProducts = parsed.products.map((p) => {
-      const normalized = normalizeProduct(p, fallbackCatId);
-      if (!validCatIds.has(normalized.categoryId)) {
-        normalized.categoryId = fallbackCatId;
-      }
-      return normalized;
-    });
-    const nextTransactions = parsed.transactions.map(normalizeTransaction);
-
-    writeAllToStorage(nextSettings, nextCategories, nextProducts, nextTransactions);
-
-    state.settings = nextSettings;
-    state.categories = nextCategories;
-    state.products = nextProducts;
-    state.transactions = nextTransactions;
-    state.initialized = true;
-
-    bus.emit('settings:changed', this.getSettings());
-    bus.emit('categories:changed', { action: 'import' });
-    bus.emit('products:changed', { action: 'import' });
-    bus.emit('transactions:changed', { action: 'import' });
-    bus.emit('store:reset', { source: 'import' });
-
-    return {
-      ok: true,
-      categories: nextCategories.length,
-      products: nextProducts.length,
-      transactions: nextTransactions.length,
-    };
+    const catMap = new Map(this.getCategories().map((c) => [c.id, c.name]));
+    const headers = [
+      t('csv.prodName'),
+      t('csv.prodSku'),
+      t('csv.prodCategory'),
+      t('csv.prodPrice'),
+      t('csv.prodStock'),
+      t('csv.prodStatus'),
+    ];
+    const rows = this.getProducts().map((p) => [
+      p.name,
+      p.sku || '',
+      catMap.get(p.categoryId) || t('products.uncategorized'),
+      p.price,
+      p.stock,
+      p.active ? t('common.active') : t('common.inactive'),
+    ]);
+    return '\uFEFF' + [headers, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\r\n');
   },
 
-  resetDemoData() {
-    const seed = createSeedData();
-    const nextSettings = normalizeSettings(seed.settings);
-    setLanguage(nextSettings.language);
-    const nextCategories = seed.categories.map(normalizeCategory);
-    const fallbackCatId = nextCategories[0]?.id || 'cat_minuman';
-    const nextProducts = seed.products.map((p) => normalizeProduct(p, fallbackCatId));
-    const nextTransactions = seed.transactions.map(normalizeTransaction);
-
-    writeAllToStorage(nextSettings, nextCategories, nextProducts, nextTransactions);
-
-    state.settings = nextSettings;
-    state.categories = nextCategories;
-    state.products = nextProducts;
-    state.transactions = nextTransactions;
-    state.initialized = true;
-
-    bus.emit('products:changed', { action: 'reset' });
-    bus.emit('categories:changed', { action: 'reset' });
-    bus.emit('transactions:changed', { action: 'reset' });
-    bus.emit('settings:changed', this.getSettings());
-    bus.emit('store:reset', { source: 'demo' });
-
-    return { ok: true };
+  exportTransactionsCsv() {
+    ensureInitialized();
+    const headers = [
+      t('csv.txCode'),
+      t('csv.txDate'),
+      t('csv.txStatus'),
+      t('csv.txCustomer'),
+      t('csv.txMethod'),
+      t('csv.txMethodDetail'),
+      t('csv.txItemCount'),
+      t('csv.txSubtotal'),
+      t('csv.txOrderDiscount'),
+      t('csv.txService'),
+      t('csv.txTax'),
+      t('csv.txTotal'),
+      t('csv.txVoidReason'),
+    ];
+    const rows = this.getTransactions().map((tx) => {
+      const qtySum = (tx.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+      return [
+        formatTransactionCode(tx),
+        formatDateTime(tx.createdAt),
+        tx.status === 'void' ? 'VOID' : t('history.statusCompleted'),
+        tx.customerName || '',
+        tx.paymentMethod || 'cash',
+        tx.paymentDetail || '',
+        qtySum,
+        tx.subtotal,
+        tx.orderDiscountAmount,
+        tx.serviceAmount,
+        tx.taxAmount,
+        tx.grandTotal,
+        tx.status === 'void' ? tx.voidReason || '' : '',
+      ];
+    });
+    return '\uFEFF' + [headers, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\r\n');
   },
 };

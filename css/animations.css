@@ -66,10 +66,11 @@
 .quick-cash-btn:active,
 .qty-btn:active:not(:disabled),
 .tx-card:active,
-.mode-card:active,
 .theme-card:active,
 .accent-card:active,
-.lang-card:active {
+.lang-card:active,
+.wizard-choice-card:active,
+.btn-google:active:not(:disabled) {
   transform: scale(0.98);
 }
 

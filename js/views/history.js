@@ -156,21 +156,20 @@ function getTxTotalItemQty(tx) {
   return items.reduce((sum, item) => sum + getItemQty(item), 0);
 }
 
-function formatOrderContext(tx) {
-  const mode = String(tx?.mode || 'retail').toLowerCase();
-  const tableNo = String(tx?.tableNumber ?? '').trim();
-  const orderType = String(tx?.orderType || '')
+function getLegacyOrderContext(tx) {
+  const orderType = String(tx?.legacyOrderType || tx?.orderType || '')
     .toLowerCase()
     .replace(/[\s_-]+/g, '');
-
-  if (mode === 'fnb' || orderType === 'dinein' || orderType === 'takeaway') {
-    if (orderType === 'takeaway') return t('receipt.takeaway');
-    if (orderType === 'dinein' || tableNo) {
-      return tableNo ? t('history.tableWithDineIn', { table: tableNo }) : t('receipt.dineIn');
-    }
-    return t('app.modeShortFnb');
+  const tableNo = String(tx?.legacyTableNumber || tx?.tableNumber || '').trim();
+  if (orderType === 'dinein' || tableNo) {
+    return tableNo
+      ? t('history.legacyTableWithDineIn', { table: tableNo })
+      : t('receipt.legacyDineIn');
   }
-  return t('receipt.retail');
+  if (orderType === 'takeaway') {
+    return t('receipt.legacyTakeaway');
+  }
+  return '';
 }
 
 function buildLast7LocalDayKeys(now = new Date()) {
@@ -194,7 +193,7 @@ function matchesSearch(tx, query) {
   const customer = String(tx?.customerName || '').toLowerCase();
   if (customer.includes(q)) return true;
 
-  const tableNo = String(tx?.tableNumber || '').trim().toLowerCase();
+  const tableNo = String(tx?.legacyTableNumber || tx?.tableNumber || '').trim().toLowerCase();
   if (tableNo && (tableNo.includes(q) || `meja ${tableNo}`.includes(q) || `table ${tableNo}`.includes(q))) {
     return true;
   }
@@ -203,8 +202,8 @@ function matchesSearch(tx, query) {
   const paymentDetail = getTxPaymentDetail(tx).toLowerCase();
   if (paymentMeta.label.toLowerCase().includes(q) || paymentDetail.includes(q)) return true;
 
-  const orderContext = formatOrderContext(tx).toLowerCase();
-  if (orderContext.includes(q)) return true;
+  const legacyContext = getLegacyOrderContext(tx).toLowerCase();
+  if (legacyContext && legacyContext.includes(q)) return true;
 
   const items = Array.isArray(tx?.items) ? tx.items : [];
   for (const item of items) {
@@ -283,12 +282,11 @@ function renderTxCardHtml(tx) {
   const voided = isTxVoid(tx);
   const selected = tx.id === state.selectedId;
   const paymentMeta = getPaymentMeta(getTxPaymentMethod(tx));
-  const orderContext = formatOrderContext(tx);
+  const legacyContext = getLegacyOrderContext(tx);
   const itemLines = Array.isArray(tx.items) ? tx.items.length : 0;
   const totalQty = getTxTotalItemQty(tx);
   const grandTotal = getTxGrandTotal(tx);
   const customerName = String(tx?.customerName || '').trim();
-  const modeIcon = String(tx?.mode || '').toLowerCase() === 'fnb' ? 'utensils' : 'bag';
 
   return `
     <button
@@ -307,10 +305,11 @@ function renderTxCardHtml(tx) {
             ${icon(paymentMeta.icon)}
             <span>${escapeHtml(paymentMeta.label)}</span>
           </span>
-          <span class="badge badge--muted">
-            ${icon(modeIcon)}
-            <span>${escapeHtml(orderContext)}</span>
-          </span>
+          ${
+            legacyContext
+              ? `<span class="badge badge--muted">${icon('utensils')} <span>${escapeHtml(legacyContext)}</span></span>`
+              : ''
+          }
           ${customerName ? `<span class="badge badge--muted">${escapeHtml(customerName)}</span>` : ''}
         </div>
         <div class="tabular-nums" style="font-size: 0.78rem; color: var(--text-muted);">
@@ -355,10 +354,7 @@ function renderTxDetailBodyHtml(tx) {
   const paymentMeta = getPaymentMeta(paymentMethod);
   const paymentDetail = getTxPaymentDetail(tx);
   const paymentSuffix = formatPaymentDetailSuffix(paymentMethod, paymentMeta, paymentDetail);
-  const orderContext = formatOrderContext(tx);
-  const modeLabel = String(tx?.mode || 'retail').toLowerCase() === 'fnb'
-    ? t('app.modeBadgeFnb')
-    : t('app.modeBadgeRetail');
+  const legacyContext = getLegacyOrderContext(tx);
   const customerName = String(tx?.customerName || '').trim();
   const voidReason = String(tx?.voidReason || '').trim();
   const voidedAt = tx?.voidedAt || '';
@@ -433,11 +429,14 @@ function renderTxDetailBodyHtml(tx) {
         <div class="tabular-nums" style="font-size: 0.82rem; color: var(--text-muted);">
           ${escapeHtml(formatDateTime(getTxTimestamp(tx)))}
         </div>
-        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-          <span class="badge badge--muted">${escapeHtml(modeLabel)}</span>
-          <span class="badge badge--muted">${escapeHtml(orderContext)}</span>
-          ${customerName ? `<span class="badge badge--muted">${escapeHtml(t('history.customerBadge', { name: customerName }))}</span>` : ''}
-        </div>
+        ${
+          legacyContext || customerName
+            ? `<div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                ${legacyContext ? `<span class="badge badge--muted">${escapeHtml(legacyContext)}</span>` : ''}
+                ${customerName ? `<span class="badge badge--muted">${escapeHtml(t('history.customerBadge', { name: customerName }))}</span>` : ''}
+              </div>`
+            : ''
+        }
         ${
           voided
             ? `
@@ -783,14 +782,23 @@ function mountShell() {
         </div>
 
         <div class="history-filter-groups">
-          <div class="chip-row" data-filter-row="date" role="group" aria-label="${escapeHtml(t('history.dateAria'))}">
-            ${buildFilterChips('date', getDateFilterOptions(), state.dateFilter)}
+          <div class="history-filter-group">
+            <span class="history-filter-label" data-filter-label="date">${escapeHtml(t('history.filterDateLabel'))}</span>
+            <div class="chip-row" data-filter-row="date" role="group" aria-label="${escapeHtml(t('history.dateAria'))}">
+              ${buildFilterChips('date', getDateFilterOptions(), state.dateFilter)}
+            </div>
           </div>
-          <div class="chip-row" data-filter-row="status" role="group" aria-label="${escapeHtml(t('history.statusAria'))}">
-            ${buildFilterChips('status', getStatusFilterOptions(), state.statusFilter)}
+          <div class="history-filter-group">
+            <span class="history-filter-label" data-filter-label="status">${escapeHtml(t('history.filterStatusLabel'))}</span>
+            <div class="chip-row" data-filter-row="status" role="group" aria-label="${escapeHtml(t('history.statusAria'))}">
+              ${buildFilterChips('status', getStatusFilterOptions(), state.statusFilter)}
+            </div>
           </div>
-          <div class="chip-row" data-filter-row="payment" role="group" aria-label="${escapeHtml(t('history.paymentAria'))}">
-            ${buildFilterChips('payment', getPaymentFilterOptions(), state.paymentFilter)}
+          <div class="history-filter-group">
+            <span class="history-filter-label" data-filter-label="payment">${escapeHtml(t('history.filterPaymentLabel'))}</span>
+            <div class="chip-row" data-filter-row="payment" role="group" aria-label="${escapeHtml(t('history.paymentAria'))}">
+              ${buildFilterChips('payment', getPaymentFilterOptions(), state.paymentFilter)}
+            </div>
           </div>
         </div>
       </section>
@@ -824,18 +832,24 @@ function syncShellTranslations() {
   const clearBtn = rootEl.querySelector('[data-action="clear-search"]');
   if (clearBtn) clearBtn.setAttribute('aria-label', t('common.clearSearchAria'));
 
+  const dateLabel = rootEl.querySelector('[data-filter-label="date"]');
+  if (dateLabel) dateLabel.textContent = t('history.filterDateLabel');
   const dateRow = rootEl.querySelector('[data-filter-row="date"]');
   if (dateRow) {
     dateRow.setAttribute('aria-label', t('history.dateAria'));
     dateRow.innerHTML = buildFilterChips('date', getDateFilterOptions(), state.dateFilter);
   }
 
+  const statusLabel = rootEl.querySelector('[data-filter-label="status"]');
+  if (statusLabel) statusLabel.textContent = t('history.filterStatusLabel');
   const statusRow = rootEl.querySelector('[data-filter-row="status"]');
   if (statusRow) {
     statusRow.setAttribute('aria-label', t('history.statusAria'));
     statusRow.innerHTML = buildFilterChips('status', getStatusFilterOptions(), state.statusFilter);
   }
 
+  const paymentLabel = rootEl.querySelector('[data-filter-label="payment"]');
+  if (paymentLabel) paymentLabel.textContent = t('history.filterPaymentLabel');
   const paymentRow = rootEl.querySelector('[data-filter-row="payment"]');
   if (paymentRow) {
     paymentRow.setAttribute('aria-label', t('history.paymentAria'));

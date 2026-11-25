@@ -34,11 +34,6 @@ const EWALLET_PROVIDERS = ['GoPay', 'OVO', 'DANA', 'ShopeePay'];
 const EWALLET_OTHER_ID = '__other__';
 const BANK_PRESETS = ['BCA', 'BRI', 'BNI', 'Mandiri', 'BSI'];
 
-function getFnbNoteChips() {
-  const raw = t('pos.noteChips');
-  return Array.isArray(raw) ? raw : [];
-}
-
 function formatNumberPlain(n) {
   const num = Math.max(0, Math.round(Number(n) || 0));
   if (!num) return '';
@@ -156,41 +151,6 @@ function renderShell() {
         </div>
       </div>
 
-        <div class="pos-fnb-bar" id="pos-fnb-bar" hidden>
-          <div class="seg-control" role="group" aria-label="${escapeHtml(t('pos.orderTypeAria'))}">
-            <button
-              type="button"
-              class="seg-btn is-active"
-              data-order-type="dine-in"
-              aria-pressed="true"
-            >
-              ${icon('utensils')}
-              <span>${escapeHtml(t('receipt.dineIn'))}</span>
-            </button>
-            <button
-              type="button"
-              class="seg-btn"
-              data-order-type="takeaway"
-              aria-pressed="false"
-            >
-              ${icon('bag')}
-              <span>${escapeHtml(t('receipt.takeaway'))}</span>
-            </button>
-          </div>
-          <div id="pos-table-input-wrap" style="display:flex;align-items:center;gap:8px;flex:1;min-width:140px;max-width:220px;">
-            <span style="color:var(--text-muted);display:inline-flex;">${icon('table')}</span>
-            <input
-              type="text"
-              id="pos-table-input"
-              class="input"
-              placeholder="${escapeHtml(t('pos.tablePlaceholder'))}"
-              maxlength="20"
-              autocomplete="off"
-              aria-label="${escapeHtml(t('pos.tableAria'))}"
-            />
-          </div>
-        </div>
-
         <div class="chip-row" id="pos-category-chips" role="tablist" aria-label="${escapeHtml(t('pos.categoryFilterAria'))}"></div>
 
         <div class="product-grid" id="pos-product-grid"></div>
@@ -288,15 +248,6 @@ function syncShellTranslations() {
   const searchClear = rootEl.querySelector('#pos-search-clear');
   if (searchClear) searchClear.setAttribute('aria-label', t('common.clearSearchAria'));
 
-  const fnbGroup = rootEl.querySelector('#pos-fnb-bar .seg-control');
-  if (fnbGroup) fnbGroup.setAttribute('aria-label', t('pos.orderTypeAria'));
-
-  const tableInput = rootEl.querySelector('#pos-table-input');
-  if (tableInput) {
-    tableInput.placeholder = t('pos.tablePlaceholder');
-    tableInput.setAttribute('aria-label', t('pos.tableAria'));
-  }
-
   const chipsEl = rootEl.querySelector('#pos-category-chips');
   if (chipsEl) chipsEl.setAttribute('aria-label', t('pos.categoryFilterAria'));
 
@@ -390,8 +341,6 @@ function bindShellEvents() {
   const searchInput = rootEl.querySelector('#pos-search-input');
   const searchClear = rootEl.querySelector('#pos-search-clear');
   const viewSwitcher = rootEl.querySelector('#pos-view-switcher');
-  const fnbBar = rootEl.querySelector('#pos-fnb-bar');
-  const tableInput = rootEl.querySelector('#pos-table-input');
   const chipsEl = rootEl.querySelector('#pos-category-chips');
   const gridEl = rootEl.querySelector('#pos-product-grid');
   const cartPanel = rootEl.querySelector('#pos-cart-panel');
@@ -434,21 +383,6 @@ function bindShellEvents() {
       const currentView = getValidProductView(getSettings().productView);
       if (nextView === currentView) return;
       store.updateSettings({ productView: nextView });
-    });
-  }
-
-  if (fnbBar) {
-    fnbBar.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-order-type]');
-      if (!btn) return;
-      cart.setOrderMeta({ orderType: btn.dataset.orderType });
-      syncFnbBar();
-    });
-  }
-
-  if (tableInput) {
-    tableInput.addEventListener('input', (e) => {
-      cart.setOrderMeta({ tableNumber: e.target.value });
     });
   }
 
@@ -636,39 +570,6 @@ function attachCartInteractionHandlers(container, { isMobileSheet = false } = {}
   });
 }
 
-function syncFnbBar() {
-  if (!rootEl) return;
-  const fnbBar = rootEl.querySelector('#pos-fnb-bar');
-  if (!fnbBar) return;
-
-  const settings = getSettings();
-  const isFnb = settings.mode === 'fnb';
-  fnbBar.hidden = !isFnb;
-  if (!isFnb) return;
-
-  const cartState = cart.getState();
-  const buttons = fnbBar.querySelectorAll('[data-order-type]');
-  buttons.forEach((btn) => {
-    const active = btn.dataset.orderType === cartState.orderType;
-    btn.classList.toggle('is-active', active);
-    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-  });
-
-  const tableWrap = fnbBar.querySelector('#pos-table-input-wrap');
-  const tableInput = fnbBar.querySelector('#pos-table-input');
-  const isDineIn = cartState.orderType === 'dine-in';
-
-  if (tableWrap) {
-    tableWrap.style.display = isDineIn ? 'flex' : 'none';
-  }
-  if (tableInput) {
-    tableInput.disabled = !isDineIn;
-    if (document.activeElement !== tableInput && tableInput.value !== cartState.tableNumber) {
-      tableInput.value = cartState.tableNumber;
-    }
-  }
-}
-
 function syncActiveCategoryChip() {
   if (!rootEl) return;
   const chipsEl = rootEl.querySelector('#pos-category-chips');
@@ -739,7 +640,6 @@ function renderProductGrid() {
   if (!gridEl) return;
 
   const settings = getSettings();
-  const isRetail = settings.mode === 'retail';
   const viewMode = getValidProductView(settings.productView);
   gridEl.className = `product-grid product-grid--${viewMode}`;
   const allActive = (store.getProducts() || []).filter((p) => p && p.active !== false);
@@ -778,8 +678,8 @@ function renderProductGrid() {
     .map((p) => {
       const qtyInCart = qtyMap.get(p.id) || 0;
       const stock = Math.max(0, Math.floor(Number(p.stock) || 0));
-      const isOutOfStock = isRetail && stock <= 0;
-      const isLowStock = isRetail && stock > 0 && stock <= 5;
+      const isOutOfStock = stock <= 0;
+      const isLowStock = stock > 0 && stock <= 5;
       const cat = catMap.get(p.categoryId);
       const catTint = safeCatColor(cat);
 
@@ -792,25 +692,20 @@ function renderProductGrid() {
           ? `<span class="product-badge-qty tabular-nums" aria-label="${escapeHtml(t('pos.inCartAria', { qty: qtyInCart }))}">${qtyInCart}</span>`
           : '';
 
-      let stockPillHtml = '';
-      let listStockHtml = '';
-      if (isRetail) {
-        const pillStyle = isOutOfStock
-          ? 'background:var(--danger-bg);color:var(--danger);border-color:rgba(185,28,28,0.28);'
-          : isLowStock
-            ? 'background:var(--warning-bg);color:var(--warning);border-color:rgba(180,83,9,0.28);'
-            : '';
-        const stockText = isOutOfStock ? t('pos.outOfStock') : t('pos.stockCount', { stock });
-        stockPillHtml = `<span class="product-stock-pill" style="${pillStyle}">${escapeHtml(stockText)}</span>`;
-        listStockHtml = `<span class="product-list-stock tabular-nums" style="${pillStyle}">${escapeHtml(stockText)}</span>`;
-      }
+      const pillStyle = isOutOfStock
+        ? 'background:var(--danger-bg);color:var(--danger);border-color:rgba(185,28,28,0.28);'
+        : isLowStock
+          ? 'background:var(--warning-bg);color:var(--warning);border-color:rgba(180,83,9,0.28);'
+          : '';
+      const stockText = isOutOfStock ? t('pos.outOfStock') : t('pos.stockCount', { stock });
+      const stockPillHtml = `<span class="product-stock-pill" style="${pillStyle}">${escapeHtml(stockText)}</span>`;
+      const listStockHtml = `<span class="product-list-stock tabular-nums" style="${pillStyle}">${escapeHtml(stockText)}</span>`;
 
-      const metaHtml =
-        isRetail && p.sku
-          ? `<span>${escapeHtml(p.sku)}</span>`
-          : cat
-            ? `<span>${escapeHtml(cat.name)}</span>`
-            : '';
+      const metaHtml = p.sku
+        ? `<span>${escapeHtml(p.sku)}</span>`
+        : cat
+          ? `<span>${escapeHtml(cat.name)}</span>`
+          : '';
 
       const classes = ['product-card'];
       if (qtyInCart > 0) classes.push('is-in-cart');
@@ -1333,25 +1228,12 @@ function openItemOptionsSheet(productId) {
   const item = cartState.items.find((it) => it.productId === productId);
   if (!item) return;
 
-  const settings = getSettings();
   const sheetId = 'item-options-sheet';
   const grossTotal = item.price * item.qty;
 
   let currentType = item.discountType || 'none';
   let currentValue = Number(item.discountValue) || 0;
   let currentNote = String(item.note || '');
-
-  const fnbChipsHtml =
-    settings.mode === 'fnb'
-      ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
-          ${getFnbNoteChips()
-            .map(
-              (chip) =>
-                `<button type="button" class="chip" data-note-preset="${escapeHtml(chip)}" style="min-height:36px;padding:0 12px;font-size:0.8rem;">${escapeHtml(chip)}</button>`
-            )
-            .join('')}
-        </div>`
-      : '';
 
   const contentHtml = `
     <div class="card" style="margin-bottom:14px;padding:12px 14px;background:var(--bg-surface-2);">
@@ -1397,7 +1279,6 @@ function openItemOptionsSheet(productId) {
         placeholder="${escapeHtml(t('pos.itemNotePlaceholder'))}"
         maxlength="120"
       />
-      ${fnbChipsHtml}
     </div>
   `;
 
@@ -1488,19 +1369,6 @@ function openItemOptionsSheet(productId) {
               currentType === 'rp' ? formatNumberPlain(currentValue) : String(currentValue);
           }
           renderPresetsAndPreview();
-          return;
-        }
-
-        const noteChip = e.target.closest('[data-note-preset]');
-        if (noteChip && noteInput) {
-          const phrase = noteChip.dataset.notePreset;
-          const existing = noteInput.value.trim();
-          if (!existing) {
-            noteInput.value = phrase;
-          } else if (!existing.toLowerCase().includes(phrase.toLowerCase())) {
-            noteInput.value = `${existing}, ${phrase}`;
-          }
-          currentNote = noteInput.value;
           return;
         }
 
@@ -1867,15 +1735,6 @@ function openCheckoutSheet() {
   let customerName = cartState.customerName || '';
   let isSubmitting = false;
 
-  const orderBadge =
-    settings.mode === 'fnb'
-      ? cartState.orderType === 'dine-in'
-        ? cartState.tableNumber.trim()
-          ? t('receipt.dineInTable', { table: cartState.tableNumber.trim() })
-          : t('receipt.dineIn')
-        : t('receipt.takeaway')
-      : t('receipt.retail');
-
   const qrisSeed = `${settings.storeName || 'AruPOS'}|${grandTotal}|${totals.itemCount}|${Date.now()}`;
   const qrisSvg = generateLocalQrisSvg(qrisSeed);
 
@@ -1906,7 +1765,7 @@ function openCheckoutSheet() {
     <div class="card" style="margin-bottom:14px;background:var(--primary-container);border-color:transparent;color:var(--on-primary-container);">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;">
         <span style="font-size:0.8rem;font-weight:700;opacity:0.85;">${escapeHtml(t('pos.amountDue'))}</span>
-        <span class="badge badge--primary" style="background:var(--bg-surface);color:var(--primary);">${escapeHtml(orderBadge)} · ${escapeHtml(t('pos.countItems', { count: totals.itemCount }))}</span>
+        <span class="badge badge--primary" style="background:var(--bg-surface);color:var(--primary);">${escapeHtml(t('pos.countItems', { count: totals.itemCount }))}</span>
       </div>
       <div class="tabular-nums" style="font-size:1.65rem;font-weight:900;letter-spacing:-0.02em;">${formatRupiah(grandTotal)}</div>
     </div>
@@ -2177,13 +2036,6 @@ function openCheckoutSheet() {
             paymentDetail,
             cashReceived: paidCash,
             changeAmount: changeAmt,
-            mode: freshSettings.mode || 'retail',
-            orderType:
-              freshSettings.mode === 'fnb' ? freshCart.orderType : 'retail',
-            tableNumber:
-              freshSettings.mode === 'fnb' && freshCart.orderType === 'dine-in'
-                ? freshCart.tableNumber.trim()
-                : '',
             customerName: customerName.trim(),
           };
 
@@ -2301,7 +2153,6 @@ export function renderPosView() {
   if (!rootEl) return;
   syncShellTranslations();
   syncProductViewSwitcher();
-  syncFnbBar();
   renderCategoryChips();
   renderProductGrid();
   renderDesktopCart();
@@ -2319,6 +2170,12 @@ export function initPosView(container) {
     initialized = true;
 
     bus.on('products:changed', () => {
+      const currentItems = cart.getState().items || [];
+      for (const it of currentItems) {
+        if (!store.getProductById(it.productId)) {
+          cart.removeItem(it.productId);
+        }
+      }
       renderProductGrid();
       renderDesktopCart();
       renderMobileCartBar();
@@ -2349,7 +2206,6 @@ export function initPosView(container) {
       };
       pendingEnterProductId = null;
 
-      syncFnbBar();
       updateProductCardBadgesOnly();
       renderDesktopCart(animOpts);
       renderMobileCartBar();

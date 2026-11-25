@@ -42,15 +42,18 @@ function formatPaymentDisplay(method, detail) {
   return `${label} (${cleanDetail})`;
 }
 
-function getOrderTypeLabel(tx) {
-  if (tx.orderType === 'dine-in') {
-    const meja = String(tx.tableNumber || '').trim();
-    return meja ? t('receipt.dineInTable', { table: meja }) : t('receipt.dineIn');
+function getLegacyOrderBadge(tx) {
+  const orderType = String(tx?.legacyOrderType || tx?.orderType || '')
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '');
+  const tableNo = String(tx?.legacyTableNumber || tx?.tableNumber || '').trim();
+  if (orderType === 'dinein' || tableNo) {
+    return tableNo ? t('receipt.legacyDineInTable', { table: tableNo }) : t('receipt.legacyDineIn');
   }
-  if (tx.orderType === 'takeaway') {
-    return t('receipt.takeaway');
+  if (orderType === 'takeaway') {
+    return t('receipt.legacyTakeaway');
   }
-  return t('receipt.retail');
+  return '';
 }
 
 function normalizeReceiptItems(tx) {
@@ -89,7 +92,7 @@ export function renderReceiptHtml(tx, settings = {}) {
 
   const receiptNo = formatTransactionCode(tData);
   const createdAt = formatDateTime(tData.createdAt);
-  const orderLabel = getOrderTypeLabel(tData);
+  const legacyOrderLabel = getLegacyOrderBadge(tData);
   const customerName = String(tData.customerName || '').trim();
   const isVoid = tData.status === 'void';
   const voidReason = String(tData.voidReason || '').trim();
@@ -222,10 +225,14 @@ export function renderReceiptHtml(tx, settings = {}) {
           <span>${escapeHtml(t('receipt.date'))}</span>
           <span class="tabular-nums">${escapeHtml(createdAt)}</span>
         </div>
-        <div class="receipt-row">
-          <span>${escapeHtml(t('receipt.order'))}</span>
-          <span>${escapeHtml(orderLabel)}</span>
-        </div>
+        ${
+          legacyOrderLabel
+            ? `<div class="receipt-row">
+                <span>${escapeHtml(t('receipt.order'))}</span>
+                <span>${escapeHtml(legacyOrderLabel)}</span>
+              </div>`
+            : ''
+        }
         ${
           customerName
             ? `<div class="receipt-row">
@@ -310,7 +317,10 @@ export function formatReceiptText(tx, settings = {}) {
   lines.push(dblLine);
   lines.push(padRow(t('receipt.receiptShort'), formatTransactionCode(tData)));
   lines.push(padRow(t('receipt.date'), formatDateTime(tData.createdAt)));
-  lines.push(padRow(t('receipt.order'), getOrderTypeLabel(tData)));
+  const legacyOrderText = getLegacyOrderBadge(tData);
+  if (legacyOrderText) {
+    lines.push(padRow(t('receipt.order'), legacyOrderText));
+  }
   if (tData.customerName) {
     lines.push(padRow(t('receipt.customer'), String(tData.customerName).trim()));
   }

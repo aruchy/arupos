@@ -3,7 +3,7 @@ import { icon } from './icons.js';
 import { t } from './i18n.js';
 
 const RIPPLE_SELECTOR =
-  '.btn, .chip, .product-card, .nav-item, .method-card, .seg-btn, .icon-btn, .quick-cash-btn, .qty-btn, .mode-card, .theme-card, .accent-card, .lang-card, .tx-card';
+  '.btn, .chip, .product-card, .nav-item, .method-card, .seg-btn, .icon-btn, .quick-cash-btn, .qty-btn, .theme-card, .accent-card, .lang-card, .tx-card, .wizard-choice-card, .btn-google';
 const EASE_SMOOTH = 'cubic-bezier(0.22, 1, 0.36, 1)';
 const MAX_TOASTS = 3;
 const SHEET_CLOSE_MS = 210;
@@ -268,13 +268,12 @@ export function applyAccent(accent = 'emerald') {
 
   document.documentElement.setAttribute('data-accent', safeAccent);
 
-  const logoEl = document.querySelector('.brand-logo');
-  if (logoEl) {
-    logoEl.setAttribute(
-      'src',
-      preset.iconColors ? buildAccentIconDataUri(preset.iconColors) : './assets/icon.svg'
-    );
-  }
+  const logoSrc = preset.iconColors
+    ? buildAccentIconDataUri(preset.iconColors)
+    : './assets/icon.svg';
+  document.querySelectorAll('.brand-logo').forEach((logoEl) => {
+    logoEl.setAttribute('src', logoSrc);
+  });
 
   return safeAccent;
 }

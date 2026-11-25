@@ -115,12 +115,6 @@ function injectMinimalHelperStyles() {
       flex: 1;
       min-width: 0;
     }
-    .products-inline-error {
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: var(--danger);
-      min-height: 1.1em;
-    }
     .products-cat-item {
       display: flex;
       flex-direction: column;
@@ -182,7 +176,7 @@ function renderShell(container) {
     <div class="view-header">
       <div>
         <h1 class="view-title" data-slot="products-title">${escapeHtml(t('products.title'))}</h1>
-        <p class="view-subtitle" data-slot="mode-subtitle"></p>
+        <p class="view-subtitle" data-slot="stock-subtitle">${escapeHtml(t('products.stockSub'))}</p>
       </div>
       <div class="view-actions">
         <button type="button" class="btn btn--outlined" data-action="manage-categories">
@@ -278,6 +272,9 @@ function syncShellTranslations() {
   const titleEl = container.querySelector('[data-slot="products-title"]');
   if (titleEl) titleEl.textContent = t('products.title');
 
+  const subtitleEl = container.querySelector('[data-slot="stock-subtitle"]');
+  if (subtitleEl) subtitleEl.textContent = t('products.stockSub');
+
   const catBtnLabel = container.querySelector('[data-slot="btn-manage-categories"]');
   if (catBtnLabel) catBtnLabel.textContent = t('products.manageCategories');
 
@@ -366,14 +363,6 @@ function renderDynamicRegions() {
   const totalCount = products.length;
   const lowCount = products.filter((p) => p.stock > 0 && p.stock <= LOW_STOCK_THRESHOLD).length;
   const outCount = products.filter((p) => p.stock === 0).length;
-
-  const subtitleEl = container.querySelector('[data-slot="mode-subtitle"]');
-  if (subtitleEl) {
-    subtitleEl.textContent =
-      settings.mode === 'retail'
-        ? t('products.modeRetailSub')
-        : t('products.modeFnbSub');
-  }
 
   const searchInput = container.querySelector('[data-role="product-search"]');
   const clearBtn = container.querySelector('[data-action="clear-search"]');
@@ -622,18 +611,19 @@ function openProductFormSheet(productId = null) {
   let uploadedImage = isSafeDataImage(existing?.image) ? existing.image : '';
   let visualTab = uploadedImage ? 'photo' : 'icon';
 
-  const initialCatId = existing?.categoryId || categories[0]?.id || '';
-  const initialCat = categories.find((c) => c.id === initialCatId) || categories[0] || null;
+  const initialCatId = existing ? existing.categoryId || '' : categories[0]?.id || '';
+  const initialCat = initialCatId
+    ? categories.find((c) => c.id === initialCatId) || null
+    : null;
   const initialCatTint = initialCat ? safeColor(initialCat.color) : '';
 
-  const categoryOptionsHtml = categories
-    .map((cat) => {
-      const selected = existing
-        ? existing.categoryId === cat.id
-        : cat.id === categories[0]?.id;
+  const categoryOptionsHtml = [
+    `<option value="" ${!initialCatId ? 'selected' : ''}>${escapeHtml(t('products.uncategorized'))}</option>`,
+    ...categories.map((cat) => {
+      const selected = cat.id === initialCatId;
       return `<option value="${escapeHtml(cat.id)}" ${selected ? 'selected' : ''}>${escapeHtml(cat.name)}</option>`;
-    })
-    .join('');
+    }),
+  ].join('');
 
   const contentHtml = `
     <form id="arupos-product-form" novalidate>
@@ -855,7 +845,9 @@ function openProductFormSheet(productId = null) {
       };
 
       const syncCategoryPreview = () => {
-        const selectedCat = categories.find((c) => c.id === catSelect?.value) || categories[0] || null;
+        const selectedCat = catSelect?.value
+          ? categories.find((c) => c.id === catSelect.value) || null
+          : null;
         const tint = selectedCat ? safeColor(selectedCat.color) : '';
         const tabPreview = sheetEl.querySelector('[data-role="tab-icon-preview"]');
         if (tabPreview) tabPreview.innerHTML = categoryIcon(selectedCat);
@@ -956,7 +948,7 @@ function openProductFormSheet(productId = null) {
         const price = parseRupiahInput(rawPriceText);
         const rawStock = stockInput?.value === '' ? NaN : Number(stockInput?.value);
         const stock = Math.round(rawStock);
-        const categoryId = catSelect?.value || categories[0]?.id;
+        const categoryId = catSelect?.value || '';
         const sku = String(skuInput?.value || '').trim().toUpperCase();
         const active = Boolean(sheetEl.querySelector('#prd-active')?.checked);
 
@@ -1020,15 +1012,16 @@ function openCategoriesSheet() {
       countMap.set(p.categoryId, (countMap.get(p.categoryId) || 0) + 1);
     }
 
-    const listHtml = categories
-      .map((cat) => {
-        const count = countMap.get(cat.id) || 0;
-        const color = safeColor(cat.color);
-        const catIconName = getCategoryIconName(cat);
-        const isEditing = editingCatId === cat.id;
-        const canDelete = categories.length > 1;
+    const listHtml = categories.length === 0
+      ? `<div class="field-hint" style="padding:10px 12px;border-radius:var(--radius-md);background:var(--bg-surface-2);">${escapeHtml(t('products.catEmptyHint'))}</div>`
+      : categories
+          .map((cat) => {
+            const count = countMap.get(cat.id) || 0;
+            const color = safeColor(cat.color);
+            const catIconName = getCategoryIconName(cat);
+            const isEditing = editingCatId === cat.id;
 
-        return `
+            return `
           <div class="products-cat-item" data-cat-row="${escapeHtml(cat.id)}">
             <div class="products-cat-item-head">
               <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">
@@ -1058,7 +1051,7 @@ function openCategoriesSheet() {
                   data-cat-action="delete"
                   data-cat-id="${escapeHtml(cat.id)}"
                   aria-label="${escapeHtml(t('products.catDeleteAria', { name: cat.name }))}"
-                  ${canDelete ? `title="${escapeHtml(t('products.catDeleteTitle'))}"` : `disabled title="${escapeHtml(t('products.catMinOneTitle'))}"`}
+                  title="${escapeHtml(t('products.catDeleteTitle'))}"
                 >
                   ${icon('trash')}
                 </button>
@@ -1117,7 +1110,7 @@ function openCategoriesSheet() {
           </div>
         `;
       })
-      .join('');
+          .join('');
 
     return `
       <div class="category-list" style="margin-bottom:var(--space-5);">${listHtml}</div>
@@ -1280,10 +1273,6 @@ function openCategoriesSheet() {
 
         if (action === 'delete') {
           const cats = store.getCategories();
-          if (cats.length <= 1) {
-            toast(t('products.catMinOneToast'), 'warning');
-            return;
-          }
           const target = cats.find((c) => c.id === catId);
           if (!target) return;
           const fallback = cats.find((c) => c.id !== catId);
@@ -1296,7 +1285,7 @@ function openCategoriesSheet() {
               ? t('products.catDeleteWithProducts', {
                   name: target.name,
                   count: affectedCount,
-                  fallback: fallback?.name || '-',
+                  fallback: fallback?.name || t('products.uncategorized'),
                 })
               : t('products.catDeleteConfirm', { name: target.name });
 

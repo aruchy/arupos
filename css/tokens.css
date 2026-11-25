@@ -40,7 +40,6 @@
   --progress-gradient-end: #2B8E72;
   --accent-shadow-sm: 0 3px 10px rgba(22, 96, 75, 0.22);
   --accent-shadow-md: 0 4px 14px rgba(22, 96, 75, 0.26);
-  --mode-pill-border: rgba(22, 96, 75, 0.22);
 
   /* Text (WCAG AAA/AA hierarchy on silk pearl surfaces) */
   --text-primary: #181B24;
@@ -155,7 +154,6 @@
   --progress-gradient-end: #6CC4A7;
   --accent-shadow-sm: 0 3px 10px rgba(30, 117, 91, 0.26);
   --accent-shadow-md: 0 4px 14px rgba(30, 117, 91, 0.32);
-  --mode-pill-border: rgba(108, 196, 167, 0.26);
 
   /* Semantic Colors */
   --success: #6EC1F2;
@@ -204,7 +202,6 @@
   --progress-gradient-end: #C68B2C;
   --accent-shadow-sm: 0 3px 10px rgba(154, 96, 18, 0.22);
   --accent-shadow-md: 0 4px 14px rgba(154, 96, 18, 0.26);
-  --mode-pill-border: rgba(154, 96, 18, 0.22);
   --focus-ring: rgba(154, 96, 18, 0.26);
   --ripple-color: rgba(154, 96, 18, 0.16);
   --ambient-glow-1: rgba(180, 126, 48, 0.10);
@@ -224,7 +221,6 @@
   --progress-gradient-end: #E8B866;
   --accent-shadow-sm: 0 3px 10px rgba(194, 138, 50, 0.24);
   --accent-shadow-md: 0 4px 14px rgba(194, 138, 50, 0.30);
-  --mode-pill-border: rgba(232, 184, 102, 0.26);
   --focus-ring: rgba(232, 184, 102, 0.34);
   --ripple-color: rgba(232, 184, 102, 0.20);
   --ambient-glow-1: rgba(212, 158, 66, 0.15);
@@ -248,7 +244,6 @@
   --progress-gradient-end: #657AC2;
   --accent-shadow-sm: 0 3px 10px rgba(45, 70, 150, 0.20);
   --accent-shadow-md: 0 4px 14px rgba(45, 70, 150, 0.26);
-  --mode-pill-border: rgba(45, 70, 150, 0.20);
   --focus-ring: rgba(45, 70, 150, 0.28);
   --ripple-color: rgba(45, 70, 150, 0.16);
   --ambient-glow-1: rgba(45, 70, 150, 0.08);
@@ -268,7 +263,6 @@
   --progress-gradient-end: #7B96EB;
   --accent-shadow-sm: 0 3px 10px rgba(55, 83, 173, 0.26);
   --accent-shadow-md: 0 4px 14px rgba(55, 83, 173, 0.32);
-  --mode-pill-border: rgba(147, 174, 255, 0.26);
   --focus-ring: rgba(147, 174, 255, 0.34);
   --ripple-color: rgba(147, 174, 255, 0.20);
   --ambient-glow-1: rgba(74, 108, 212, 0.16);
@@ -292,7 +286,6 @@
   --progress-gradient-end: #AD435E;
   --accent-shadow-sm: 0 3px 10px rgba(126, 36, 59, 0.22);
   --accent-shadow-md: 0 4px 14px rgba(126, 36, 59, 0.26);
-  --mode-pill-border: rgba(126, 36, 59, 0.22);
   --focus-ring: rgba(126, 36, 59, 0.25);
   --ripple-color: rgba(126, 36, 59, 0.15);
   --ambient-glow-1: rgba(126, 36, 59, 0.08);
@@ -312,7 +305,6 @@
   --progress-gradient-end: #E598AA;
   --accent-shadow-sm: 0 3px 10px rgba(148, 46, 72, 0.26);
   --accent-shadow-md: 0 4px 14px rgba(148, 46, 72, 0.32);
-  --mode-pill-border: rgba(229, 152, 170, 0.26);
   --focus-ring: rgba(229, 152, 170, 0.34);
   --ripple-color: rgba(229, 152, 170, 0.20);
   --ambient-glow-1: rgba(154, 52, 78, 0.17);

@@ -1,5 +1,6 @@
 import {
   getLocalDateKey,
+  formatDateTime,
   escapeHtml,
   clamp,
   bus,
@@ -7,7 +8,14 @@ import {
 import { icon } from '../icons.js';
 import { store } from '../store.js';
 import { renderReceiptHtml } from '../receipt.js';
-import { applyTheme, applyAccent, ACCENT_THEMES, toast, confirmDialog, animateLanguageSwitch } from '../motion.js';
+import {
+  applyTheme,
+  applyAccent,
+  ACCENT_THEMES,
+  toast,
+  confirmDialog,
+  animateLanguageSwitch,
+} from '../motion.js';
 import { t, LANGUAGES, VALID_LANGUAGES } from '../i18n.js';
 
 const THEME_PREF_KEY = 'arupos_v1_theme_pref';
@@ -46,17 +54,15 @@ function writeThemePref(mode) {
 
 function getSettingsSafe() {
   const s = store.getSettings() || {};
-  const mode = s.mode === 'fnb' ? 'fnb' : 'retail';
   const theme = readThemePref(s.theme);
   const accent = VALID_ACCENTS.includes(s.accent) ? s.accent : 'emerald';
   const language = VALID_LANGUAGES.includes(s.language) ? s.language : 'id';
 
   return {
-    mode,
     theme,
     accent,
     language,
-    storeName: String(s.storeName ?? 'Kedai & Toko Aru'),
+    storeName: String(s.storeName ?? ''),
     storeAddress: String(s.storeAddress ?? ''),
     storePhone: String(s.storePhone ?? ''),
     receiptFooter: String(s.receiptFooter ?? ''),
@@ -82,13 +88,10 @@ function buildSampleReceiptHtml(draft) {
     receiptNo: t('settings.sampleReceiptNo'),
     createdAt: new Date().toISOString(),
     status: 'completed',
-    mode: draft.mode,
-    orderType: draft.mode === 'fnb' ? 'dine-in' : '',
-    tableNumber: draft.mode === 'fnb' ? '05' : '',
     customerName: '',
     items: [
       {
-        name: 'Kopi Susu Gula Aren',
+        name: t('settings.sampleItem1'),
         price: 25000,
         qty: 1,
         grossTotal: 25000,
@@ -97,7 +100,7 @@ function buildSampleReceiptHtml(draft) {
         note: '',
       },
       {
-        name: 'Croissant Butter',
+        name: t('settings.sampleItem2'),
         price: 22000,
         qty: 1,
         grossTotal: 22000,
@@ -203,93 +206,198 @@ function syncTaxFieldStates() {
   }
 }
 
-function handleExportData() {
+function downloadBlob(content, mimeType, filename) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function handleExportJson() {
   try {
     const jsonStr = store.exportAllData();
     const content = typeof jsonStr === 'string' ? jsonStr : JSON.stringify(jsonStr, null, 2);
-    const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const dateKey = getLocalDateKey(new Date()) || 'backup';
-    const filename = `arupos-backup-${dateKey}.json`;
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const dateKey = getLocalDateKey(new Date()) || 'export';
+    const filename = `arupos-export-${dateKey}.json`;
+    downloadBlob(content, 'application/json;charset=utf-8', filename);
     toast(t('settings.exportedToast', { filename }), 'success');
   } catch (err) {
     toast(err?.message || t('settings.exportFailedToast'), 'error');
   }
 }
 
-async function handleImportFile(fileInput) {
-  const file = fileInput?.files?.[0];
-  if (!file) return;
-
+function handleExportCsvTransactions() {
   try {
-    const text = await file.text();
-    try {
-      JSON.parse(text);
-    } catch {
-      toast(t('settings.importInvalidJson'), 'error');
-      return;
-    }
-
-    const confirmed = await confirmDialog({
-      title: t('settings.importConfirmTitle'),
-      message: t('settings.importConfirmMsg'),
-      confirmText: t('settings.importConfirmOk'),
-      cancelText: t('common.cancel'),
-      danger: true,
-    });
-
-    if (!confirmed) return;
-
-    const res = store.importAllData(text);
-    if (res && typeof res === 'object' && res.ok === false) {
-      toast(res.error || res.reason || t('settings.importBadStructure'), 'error');
-      return;
-    }
-
-    writeThemePref('');
-    const updated = getSettingsSafe();
-    applyTheme(updated.theme);
-    applyAccent(updated.accent);
-    toast(t('settings.importSuccessToast'), 'success');
-    renderSettingsView();
+    const csv = store.exportTransactionsCsv();
+    const dateKey = getLocalDateKey(new Date()) || 'transaksi';
+    const filename = `arupos-transaksi-${dateKey}.csv`;
+    downloadBlob(csv, 'text/csv;charset=utf-8', filename);
+    toast(t('settings.exportedToast', { filename }), 'success');
   } catch (err) {
-    toast(err?.message || t('settings.importFailedToast'), 'error');
-  } finally {
-    if (fileInput) fileInput.value = '';
+    toast(err?.message || t('settings.exportFailedToast'), 'error');
   }
 }
 
-async function handleResetDemo() {
+function handleExportCsvProducts() {
+  try {
+    const csv = store.exportProductsCsv();
+    const dateKey = getLocalDateKey(new Date()) || 'produk';
+    const filename = `arupos-produk-${dateKey}.csv`;
+    downloadBlob(csv, 'text/csv;charset=utf-8', filename);
+    toast(t('settings.exportedToast', { filename }), 'success');
+  } catch (err) {
+    toast(err?.message || t('settings.exportFailedToast'), 'error');
+  }
+}
+
+async function handleSignOut() {
   const confirmed = await confirmDialog({
-    title: t('settings.resetConfirmTitle'),
-    message: t('settings.resetConfirmMsg'),
-    confirmText: t('settings.resetConfirmOk'),
+    title: t('auth.signOutConfirmTitle'),
+    message: t('auth.signOutConfirmMsg'),
+    confirmText: t('auth.signOutConfirmOk'),
+    cancelText: t('common.cancel'),
+    danger: false,
+  });
+  if (!confirmed) return;
+  bus.emit('auth:signout-requested');
+}
+
+async function handleDeleteSampleData() {
+  const counts = store.getDemoDataCounts();
+  if (!counts || counts.total <= 0) return;
+
+  const confirmed = await confirmDialog({
+    title: t('settings.deleteSampleConfirmTitle'),
+    message: t('settings.deleteSampleConfirmMsg', {
+      products: counts.products,
+      transactions: counts.transactions,
+      categories: counts.categories,
+    }),
+    confirmText: t('settings.deleteSampleConfirmOk'),
     cancelText: t('common.cancel'),
     danger: true,
   });
-
   if (!confirmed) return;
 
   try {
-    store.resetDemoData();
-    writeThemePref('');
-    const updated = getSettingsSafe();
-    applyTheme(updated.theme);
-    applyAccent(updated.accent);
-    toast(t('settings.resetSuccessToast'), 'success');
-    renderSettingsView();
+    store.deleteSampleData();
+    toast(t('settings.deleteSampleDoneToast'), 'success');
+    updateDeleteSampleSection();
   } catch (err) {
-    toast(err?.message || t('settings.resetFailedToast'), 'error');
+    toast(err?.message || t('settings.exportFailedToast'), 'error');
   }
+}
+
+function renderCloudSyncBoxHtml(syncStatus) {
+  const s = syncStatus || { state: 'idle', lastSyncedAt: null, errorCode: null };
+  let boxClass = 'cloud-sync-box';
+  let iconName = 'cloud';
+  let statusText = t('cloud.connecting');
+
+  if (s.state === 'synced') {
+    boxClass += ' is-synced';
+    iconName = 'cloud';
+    statusText = t('cloud.synced');
+  } else if (s.state === 'syncing') {
+    boxClass += ' is-syncing';
+    iconName = 'cloud';
+    statusText = t('cloud.syncing');
+  } else if (s.state === 'offline') {
+    boxClass += ' is-offline';
+    iconName = 'cloudOff';
+    statusText = t('cloud.offline');
+  } else if (s.state === 'error') {
+    boxClass += ' is-error';
+    iconName = 'warning';
+    statusText = s.errorCode === 'permission-denied' ? t('cloud.rulesMissing') : t('cloud.error');
+  }
+
+  const timeHtml = s.lastSyncedAt
+    ? `<span class="tabular-nums" style="font-size:0.74rem; opacity:0.86;">${escapeHtml(t('cloud.lastSynced', { time: formatDateTime(s.lastSyncedAt) }))}</span>`
+    : '';
+
+  return `
+    <div class="${boxClass}" role="status">
+      <span class="cloud-sync-icon">${icon(iconName)}</span>
+      <div style="display:flex; flex-direction:column; gap:2px; min-width:0; flex:1;">
+        <span style="font-weight:700; font-size:0.84rem;">${escapeHtml(statusText)}</span>
+        ${timeHtml}
+      </div>
+    </div>
+  `;
+}
+
+function updateCloudSyncBox() {
+  if (!rootEl) return;
+  const slot = rootEl.querySelector('[data-slot="cloud-sync-box"]');
+  if (!slot) return;
+  slot.innerHTML = renderCloudSyncBoxHtml(store.getSyncStatus());
+}
+
+function renderDeleteSampleHtml() {
+  if (!store.hasDemoData()) return '';
+  const counts = store.getDemoDataCounts();
+  if (!counts || counts.total <= 0) return '';
+
+  return `
+    <div class="sample-cleanup-box">
+      <div style="flex:1; min-width:160px;">
+        <div style="font-weight:700; font-size:0.88rem; color:var(--danger);">${escapeHtml(t('settings.deleteSampleTitle'))}</div>
+        <div class="settings-card-desc">${escapeHtml(t('settings.deleteSampleDesc', { products: counts.products, transactions: counts.transactions }))}</div>
+      </div>
+      <button type="button" class="btn btn--danger btn--sm" data-action="delete-sample">
+        ${icon('trash')}
+        <span>${escapeHtml(t('settings.deleteSampleBtn'))}</span>
+      </button>
+    </div>
+  `;
+}
+
+function updateDeleteSampleSection() {
+  if (!rootEl) return;
+  const slot = rootEl.querySelector('[data-slot="delete-sample-wrap"]');
+  if (!slot) return;
+  slot.innerHTML = renderDeleteSampleHtml();
+}
+
+function getInitials(nameOrEmail) {
+  const str = String(nameOrEmail || '').trim();
+  if (!str) return 'A';
+  const parts = str.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+  return str.slice(0, 2).toUpperCase();
+}
+
+function renderAccountAvatarHtml(user) {
+  const photoUrl = String(user?.photoURL || '').trim();
+  const displayName = user?.displayName || user?.email || 'AruPOS';
+  const initials = escapeHtml(getInitials(displayName));
+
+  if (/^https:\/\//i.test(photoUrl)) {
+    return `
+      <span class="account-avatar-wrap" data-avatar-wrap>
+        <img
+          src="${escapeHtml(photoUrl)}"
+          alt="${escapeHtml(displayName)}"
+          class="account-avatar"
+          width="44"
+          height="44"
+          referrerpolicy="no-referrer"
+          data-account-avatar-img
+        />
+        <span class="account-avatar account-avatar--fallback" hidden>${initials}</span>
+      </span>
+    `;
+  }
+
+  return `<span class="account-avatar account-avatar--fallback">${initials}</span>`;
 }
 
 function syncAppearanceCards(activeTheme = null, activeAccent = null) {
@@ -324,15 +432,9 @@ function handleContainerClick(e) {
   const target = e.target;
   if (!(target instanceof Element)) return;
 
-  const modeCard = target.closest('[data-select-mode]');
-  if (modeCard && rootEl.contains(modeCard)) {
-    const mode = modeCard.getAttribute('data-select-mode');
-    if (mode === 'retail' || mode === 'fnb') {
-      store.updateSettings({ mode });
-      const label = mode === 'fnb' ? t('settings.modeFnbName') : t('settings.modeRetailName');
-      toast(t('settings.modeChangedToast', { label }), 'success');
-      renderSettingsView();
-    }
+  const signOutBtn = target.closest('[data-action="sign-out"]');
+  if (signOutBtn && rootEl.contains(signOutBtn)) {
+    handleSignOut();
     return;
   }
 
@@ -398,22 +500,27 @@ function handleContainerClick(e) {
     return;
   }
 
-  const exportBtn = target.closest('[data-action="export-data"]');
-  if (exportBtn && rootEl.contains(exportBtn)) {
-    handleExportData();
+  const exportJsonBtn = target.closest('[data-action="export-json"]');
+  if (exportJsonBtn && rootEl.contains(exportJsonBtn)) {
+    handleExportJson();
     return;
   }
 
-  const importBtn = target.closest('[data-action="trigger-import"]');
-  if (importBtn && rootEl.contains(importBtn)) {
-    const fileInput = rootEl.querySelector('#settings-import-file');
-    if (fileInput) fileInput.click();
+  const exportCsvTxBtn = target.closest('[data-action="export-csv-tx"]');
+  if (exportCsvTxBtn && rootEl.contains(exportCsvTxBtn)) {
+    handleExportCsvTransactions();
     return;
   }
 
-  const resetBtn = target.closest('[data-action="reset-demo"]');
-  if (resetBtn && rootEl.contains(resetBtn)) {
-    handleResetDemo();
+  const exportCsvProdBtn = target.closest('[data-action="export-csv-prod"]');
+  if (exportCsvProdBtn && rootEl.contains(exportCsvProdBtn)) {
+    handleExportCsvProducts();
+    return;
+  }
+
+  const deleteSampleBtn = target.closest('[data-action="delete-sample"]');
+  if (deleteSampleBtn && rootEl.contains(deleteSampleBtn)) {
+    handleDeleteSampleData();
   }
 }
 
@@ -428,11 +535,6 @@ function handleContainerInput(e) {
 function handleContainerChange(e) {
   const target = e.target;
   if (!(target instanceof HTMLInputElement)) return;
-
-  if (target.id === 'settings-import-file') {
-    handleImportFile(target);
-    return;
-  }
 
   if (target.name === 'taxEnabled' || target.name === 'serviceEnabled') {
     syncTaxFieldStates();
@@ -556,6 +658,10 @@ export function initSettingsView(container) {
       renderSettingsView();
     })
   );
+  unsubs.push(bus.on('sync:changed', updateCloudSyncBox));
+  unsubs.push(bus.on('products:changed', updateDeleteSampleSection));
+  unsubs.push(bus.on('categories:changed', updateDeleteSampleSection));
+  unsubs.push(bus.on('transactions:changed', updateDeleteSampleSection));
 
   renderSettingsView();
 }
@@ -564,6 +670,10 @@ export function renderSettingsView() {
   if (!rootEl) return;
 
   const s = getSettingsSafe();
+  const user = store.getCurrentUser();
+  const syncStatus = store.getSyncStatus();
+  const displayName = user?.displayName || user?.email || 'AruPOS';
+  const email = user?.email || '';
 
   rootEl.innerHTML = `
     <div class="settings-view">
@@ -574,47 +684,31 @@ export function renderSettingsView() {
       </header>
 
       <div class="settings-grid">
-        <!-- Card 1: Mode Operasional Kasir -->
-        <section class="settings-section" style="grid-column: 1 / -1;" aria-labelledby="settings-mode-title">
-          <h2 id="settings-mode-title" class="settings-section-title">
-            ${escapeHtml(t('settings.modeTitle'))}
+        <!-- Card 1: Akun & Sinkronisasi Cloud -->
+        <section class="settings-section" style="grid-column: 1 / -1;" aria-labelledby="settings-account-title">
+          <h2 id="settings-account-title" class="settings-section-title">
+            ${escapeHtml(t('auth.accountSectionTitle'))}
           </h2>
 
-          <div class="mode-cards" role="radiogroup" aria-label="${escapeHtml(t('settings.modeGroupAria'))}">
-            <button
-              type="button"
-              role="radio"
-              class="mode-card${s.mode === 'retail' ? ' is-active' : ''}"
-              data-select-mode="retail"
-              aria-checked="${s.mode === 'retail' ? 'true' : 'false'}"
-            >
-              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; width: 100%; gap: 6px;">
-                <span style="display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 0.9rem;">
-                  ${icon('bag')}
-                  <span>${escapeHtml(t('settings.modeRetailName'))}</span>
-                </span>
-                ${s.mode === 'retail' ? `<span class="badge badge--primary">${icon('check')} ${escapeHtml(t('common.active'))}</span>` : ''}
+          <div class="account-row">
+            <div class="account-identity">
+              ${renderAccountAvatarHtml(user)}
+              <div class="account-meta">
+                <div class="account-name">${escapeHtml(displayName)}</div>
+                ${email ? `<div class="account-email">${escapeHtml(email)}</div>` : ''}
               </div>
-              <p class="settings-card-desc">${escapeHtml(t('settings.modeRetailDesc'))}</p>
-            </button>
-
-            <button
-              type="button"
-              role="radio"
-              class="mode-card${s.mode === 'fnb' ? ' is-active' : ''}"
-              data-select-mode="fnb"
-              aria-checked="${s.mode === 'fnb' ? 'true' : 'false'}"
-            >
-              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; width: 100%; gap: 6px;">
-                <span style="display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 0.9rem;">
-                  ${icon('utensils')}
-                  <span>${escapeHtml(t('settings.modeFnbName'))}</span>
-                </span>
-                ${s.mode === 'fnb' ? `<span class="badge badge--primary">${icon('check')} ${escapeHtml(t('common.active'))}</span>` : ''}
-              </div>
-              <p class="settings-card-desc">${escapeHtml(t('settings.modeFnbDesc'))}</p>
+            </div>
+            <button type="button" class="btn btn--outlined btn--sm" data-action="sign-out">
+              ${icon('logOut')}
+              <span>${escapeHtml(t('auth.signOutBtn'))}</span>
             </button>
           </div>
+
+          <div data-slot="cloud-sync-box">
+            ${renderCloudSyncBoxHtml(syncStatus)}
+          </div>
+
+          <p class="settings-card-desc">${escapeHtml(t('cloud.autoBackupNote'))}</p>
         </section>
 
         <!-- Card 2: Tampilan, Aksen & Bahasa -->
@@ -901,51 +995,63 @@ export function renderSettingsView() {
           </form>
         </section>
 
-        <!-- Card 5: Cadangan & Data Lokal -->
-        <section class="settings-section danger-zone" aria-labelledby="settings-backup-title">
-          <h2 id="settings-backup-title" class="settings-section-title">
-            ${escapeHtml(t('settings.backupTitle'))}
+        <!-- Card 5: Ekspor Data & Pembukuan -->
+        <section class="settings-section" aria-labelledby="settings-export-title">
+          <h2 id="settings-export-title" class="settings-section-title">
+            ${escapeHtml(t('settings.exportSectionTitle'))}
           </h2>
 
+          <p class="settings-card-desc">${escapeHtml(t('cloud.autoBackupNote'))}</p>
+
           <div style="display: flex; flex-direction: column; gap: 8px;">
-            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-surface); border: 1px solid var(--border-subtle);">
+            <div class="export-row">
               <div style="flex: 1; min-width: 160px;">
-                <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-primary);">${escapeHtml(t('settings.exportTitle'))}</div>
-                <div class="settings-card-desc">${escapeHtml(t('settings.exportDesc'))}</div>
+                <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-primary);">${escapeHtml(t('settings.exportJsonTitle'))}</div>
+                <div class="settings-card-desc">${escapeHtml(t('settings.exportJsonDesc'))}</div>
               </div>
-              <button type="button" class="btn btn--outlined btn--sm" data-action="export-data">
+              <button type="button" class="btn btn--outlined btn--sm" data-action="export-json">
                 ${icon('download')}
-                <span>${escapeHtml(t('settings.exportBtn'))}</span>
+                <span>${escapeHtml(t('settings.exportJsonBtn'))}</span>
               </button>
             </div>
 
-            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-surface); border: 1px solid var(--border-subtle);">
+            <div class="export-row">
               <div style="flex: 1; min-width: 160px;">
-                <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-primary);">${escapeHtml(t('settings.importTitle'))}</div>
-                <div class="settings-card-desc">${escapeHtml(t('settings.importDesc'))}</div>
+                <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-primary);">${escapeHtml(t('settings.exportCsvTxTitle'))}</div>
+                <div class="settings-card-desc">${escapeHtml(t('settings.exportCsvTxDesc'))}</div>
               </div>
-              <input id="settings-import-file" type="file" accept="application/json,.json" hidden />
-              <button type="button" class="btn btn--outlined btn--sm" data-action="trigger-import">
-                ${icon('upload')}
-                <span>${escapeHtml(t('settings.importBtn'))}</span>
+              <button type="button" class="btn btn--outlined btn--sm" data-action="export-csv-tx">
+                ${icon('fileSpreadsheet')}
+                <span>${escapeHtml(t('settings.exportCsvTxBtn'))}</span>
               </button>
             </div>
 
-            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-surface); border: 1px solid rgba(185, 28, 28, 0.30);">
+            <div class="export-row">
               <div style="flex: 1; min-width: 160px;">
-                <div style="font-weight: 700; font-size: 0.88rem; color: var(--danger);">${escapeHtml(t('settings.resetTitle'))}</div>
-                <div class="settings-card-desc">${escapeHtml(t('settings.resetDesc'))}</div>
+                <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-primary);">${escapeHtml(t('settings.exportCsvProdTitle'))}</div>
+                <div class="settings-card-desc">${escapeHtml(t('settings.exportCsvProdDesc'))}</div>
               </div>
-              <button type="button" class="btn btn--danger btn--sm" data-action="reset-demo">
-                ${icon('refresh')}
-                <span>${escapeHtml(t('settings.resetBtn'))}</span>
+              <button type="button" class="btn btn--outlined btn--sm" data-action="export-csv-prod">
+                ${icon('fileSpreadsheet')}
+                <span>${escapeHtml(t('settings.exportCsvProdBtn'))}</span>
               </button>
             </div>
           </div>
+
+          <div data-slot="delete-sample-wrap">${renderDeleteSampleHtml()}</div>
         </section>
       </div>
     </div>
   `;
+
+  const avatarImg = rootEl.querySelector('[data-account-avatar-img]');
+  if (avatarImg) {
+    avatarImg.addEventListener('error', () => {
+      avatarImg.hidden = true;
+      const fallback = avatarImg.parentElement?.querySelector('.account-avatar--fallback');
+      if (fallback) fallback.hidden = false;
+    });
+  }
 
   syncTaxFieldStates();
 }

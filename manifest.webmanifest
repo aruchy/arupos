@@ -1,7 +1,7 @@
 {
   "name": "AruPOS - Kasir Digital Offline",
   "short_name": "AruPOS",
-  "description": "Aplikasi kasir POS serbaguna untuk HP dan tablet dengan dukungan mode Retail dan F&B, berjalan offline.",
+  "description": "Aplikasi kasir POS retail untuk HP dan tablet dengan sinkronisasi cloud dan dukungan offline.",
   "lang": "id-ID",
   "start_url": "./index.html",
   "scope": "./",

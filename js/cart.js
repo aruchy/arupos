@@ -27,8 +27,6 @@ const state = {
   orderDiscountValue: 0,
   taxEnabled: lastSettingsTax,
   serviceEnabled: lastSettingsService,
-  orderType: 'dine-in',
-  tableNumber: '',
   customerName: '',
 };
 
@@ -135,8 +133,6 @@ function resetOrderDiscountIfEmpty() {
 }
 
 function getStockLimit(product) {
-  const settings = getSafeSettings();
-  if (settings.mode !== 'retail') return null;
   if (!product) return null;
   return Math.max(0, Math.floor(Number(product.stock) || 0));
 }
@@ -346,21 +342,8 @@ export const cart = {
     emitChanged();
   },
 
-  setOrderMeta({ orderType, tableNumber, customerName } = {}) {
+  setOrderMeta({ customerName } = {}) {
     let changed = false;
-    if (orderType === 'dine-in' || orderType === 'takeaway') {
-      if (state.orderType !== orderType) {
-        state.orderType = orderType;
-        changed = true;
-      }
-    }
-    if (tableNumber !== undefined) {
-      const val = String(tableNumber ?? '');
-      if (state.tableNumber !== val) {
-        state.tableNumber = val;
-        changed = true;
-      }
-    }
     if (customerName !== undefined) {
       const val = String(customerName ?? '');
       if (state.customerName !== val) {
@@ -377,7 +360,6 @@ export const cart = {
     state.items = [];
     state.orderDiscountType = 'none';
     state.orderDiscountValue = 0;
-    state.tableNumber = '';
     state.customerName = '';
 
     if (!preserveToggles) {

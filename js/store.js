@@ -1,6 +1,7 @@
 import { createSeedData } from './seed.js';
 import { uid, getLocalDateKey, bus } from './utils.js';
 import { t, setLanguage, getLocale, VALID_LANGUAGES } from './i18n.js';
+import { getCategoryIconName } from './icons.js';
 
 const STORAGE_KEYS = {
   products: 'arupos_v1_products',
@@ -33,6 +34,16 @@ const DEFAULT_SETTINGS = {
 };
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
+const DEFAULT_CATEGORY_COLORS = [
+  '#0EA5E9',
+  '#D97706',
+  '#DB2777',
+  '#7C3AED',
+  '#0D9488',
+  '#2563EB',
+  '#EA580C',
+  '#65A30D',
+];
 
 const state = {
   initialized: false,
@@ -107,11 +118,14 @@ function normalizeSettings(raw) {
 function normalizeCategory(raw) {
   const color = typeof raw?.color === 'string' && HEX_COLOR_RE.test(raw.color.trim())
     ? raw.color.trim()
-    : '#0EA5E9';
+    : DEFAULT_CATEGORY_COLORS[0];
+  const name = String(raw?.name || t('store.defaultCategory')).trim() || t('store.defaultCategory');
+  const emoji = String(raw?.emoji || '🏷️').trim() || '🏷️';
   return {
     id: String(raw?.id || uid('cat')).trim(),
-    name: String(raw?.name || t('store.defaultCategory')).trim() || t('store.defaultCategory'),
-    emoji: String(raw?.emoji || '🏷️').trim() || '🏷️',
+    name,
+    icon: getCategoryIconName({ id: raw?.id, name, icon: raw?.icon, emoji }),
+    emoji,
     color,
   };
 }
@@ -554,7 +568,7 @@ export const store = {
     return state.categories.map(cloneCategory);
   },
 
-  addCategory({ name, emoji = '🏷️', color = '#0EA5E9' } = {}) {
+  addCategory({ name, icon, emoji = '🏷️', color } = {}) {
     ensureInitialized();
     const cleanName = String(name || '').trim();
     if (!cleanName) {
@@ -568,13 +582,18 @@ export const store = {
       throw new Error(t('store.categoryDuplicate'));
     }
 
+    const fallbackColor =
+      DEFAULT_CATEGORY_COLORS[state.categories.length % DEFAULT_CATEGORY_COLORS.length];
     const cleanColor =
-      typeof color === 'string' && HEX_COLOR_RE.test(color.trim()) ? color.trim() : '#0EA5E9';
+      typeof color === 'string' && HEX_COLOR_RE.test(color.trim()) ? color.trim() : fallbackColor;
+    const cleanEmoji = String(emoji || '🏷️').trim() || '🏷️';
+    const cleanIcon = getCategoryIconName({ name: cleanName, icon, emoji: cleanEmoji });
 
     const created = {
       id: uid('cat'),
       name: cleanName,
-      emoji: String(emoji || '🏷️').trim() || '🏷️',
+      icon: cleanIcon,
+      emoji: cleanEmoji,
       color: cleanColor,
     };
 
@@ -609,6 +628,10 @@ export const store = {
         throw new Error(t('store.categoryDuplicate'));
       }
       next.name = cleanName;
+    }
+
+    if (patch?.icon !== undefined) {
+      next.icon = getCategoryIconName({ icon: patch.icon, name: next.name });
     }
 
     if (patch?.emoji !== undefined) {

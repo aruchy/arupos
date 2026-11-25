@@ -681,6 +681,11 @@ function syncActiveCategoryChip() {
   });
 }
 
+function safeCatColor(cat) {
+  const col = typeof cat?.color === 'string' ? cat.color.trim() : '';
+  return /^#[0-9a-fA-F]{3,8}$/.test(col) ? col : '';
+}
+
 function renderCategoryChips() {
   if (!rootEl) return;
   const chipsEl = rootEl.querySelector('#pos-category-chips');
@@ -709,6 +714,7 @@ function renderCategoryChips() {
   const catChips = categories
     .map((cat) => {
       const active = selectedCategory === cat.id;
+      const catTint = safeCatColor(cat);
       return `
         <button
           type="button"
@@ -717,7 +723,7 @@ function renderCategoryChips() {
           role="tab"
           aria-selected="${active ? 'true' : 'false'}"
         >
-          <span class="chip-cat-icon" aria-hidden="true">${categoryIcon(cat)}</span>
+          <span class="chip-cat-icon${catTint ? ' has-cat-tint' : ''}"${catTint ? ` style="--cat-tint:${catTint}"` : ''} aria-hidden="true">${categoryIcon(cat)}</span>
           <span>${escapeHtml(cat.name)}</span>
         </button>
       `;
@@ -775,10 +781,11 @@ function renderProductGrid() {
       const isOutOfStock = isRetail && stock <= 0;
       const isLowStock = isRetail && stock > 0 && stock <= 5;
       const cat = catMap.get(p.categoryId);
+      const catTint = safeCatColor(cat);
 
       const mediaHtml = p.image
         ? `<img src="${escapeHtml(p.image)}" alt="${escapeHtml(p.name)}" loading="lazy" />`
-        : `<span class="product-cat-icon" aria-hidden="true">${categoryIcon(cat)}</span>`;
+        : `<span class="product-cat-icon${catTint ? ' has-cat-tint' : ''}"${catTint ? ` style="--cat-tint:${catTint}"` : ''} aria-hidden="true">${categoryIcon(cat)}</span>`;
 
       const qtyBadgeHtml =
         qtyInCart > 0
@@ -884,9 +891,10 @@ function buildCartItemsHtml(totals, { enterId = null } = {}) {
     .map((item) => {
       const catId = item.categoryId || store.getProductById(item.productId)?.categoryId;
       const cat = catId ? catMap.get(catId) : null;
+      const catTint = safeCatColor(cat);
       const thumbHtml = item.image
         ? `<img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" style="width:42px;height:42px;border-radius:var(--radius-sm);object-fit:cover;flex-shrink:0;" />`
-        : `<span class="cart-item-cat-icon" aria-hidden="true">${categoryIcon(cat)}</span>`;
+        : `<span class="cart-item-cat-icon${catTint ? ' has-cat-tint' : ''}"${catTint ? ` style="--cat-tint:${catTint}"` : ''} aria-hidden="true">${categoryIcon(cat)}</span>`;
 
       const hasDisc = item.discountAmount > 0;
       const hasNote = Boolean(item.note);

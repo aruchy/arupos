@@ -171,11 +171,11 @@ export function createSeedData() {
   };
 
   const categories = [
-    { id: 'cat_minuman', name: 'Minuman', emoji: '☕', color: '#0EA5E9' },
-    { id: 'cat_makanan', name: 'Makanan', emoji: '🍜', color: '#F59E0B' },
-    { id: 'cat_camilan', name: 'Camilan', emoji: '🥐', color: '#EC4899' },
-    { id: 'cat_retail', name: 'Retail & Aksesoris', emoji: '🛍️', color: '#8B5CF6' },
-    { id: 'cat_harian', name: 'Kebutuhan Harian', emoji: '🧴', color: '#2D4696' },
+    { id: 'cat_minuman', name: 'Minuman', icon: 'cup', emoji: '☕', color: '#0EA5E9' },
+    { id: 'cat_makanan', name: 'Makanan', icon: 'utensils', emoji: '🍜', color: '#D97706' },
+    { id: 'cat_camilan', name: 'Camilan', icon: 'cookie', emoji: '🥐', color: '#DB2777' },
+    { id: 'cat_retail', name: 'Retail & Aksesoris', icon: 'bag', emoji: '🛍️', color: '#7C3AED' },
+    { id: 'cat_harian', name: 'Kebutuhan Harian', icon: 'daily', emoji: '🧴', color: '#0D9488' },
   ];
 
   const productBaseTime = makeSeedDate(14, 9, 0).getTime();

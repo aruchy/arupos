@@ -8,7 +8,7 @@ import {
   compressImageFile,
   bus,
 } from '../utils.js';
-import { icon, categoryIcon } from '../icons.js';
+import { icon, categoryIcon, getCategoryIconName, CATEGORY_ICON_OPTIONS } from '../icons.js';
 import {
   toast,
   openSheet,
@@ -18,28 +18,23 @@ import {
 } from '../motion.js';
 import { t } from '../i18n.js';
 
-const PRODUCT_EMOJIS = [
-  '☕', '🧋', '🍵', '🧊', '💧', '🧃', '🥤',
-  '🍳', '🍜', '🍗', '🍞', '🍛', '🍔', '🍱',
-  '🥐', '🍌', '🥨', '🍩', '🍰', '🍟', '🍪',
-  '🔌', '👜', '🎧', '🧴', '🧻', '🔋', '📦',
-];
-
-const CATEGORY_EMOJIS = [
-  '☕', '🍜', '🥐', '🛍️', '🧴', '🧊',
-  '🍰', '🍱', '📱', '🎁', '🧹', '🏷️',
-];
-
 const CATEGORY_COLORS = [
   '#0EA5E9',
-  '#F59E0B',
-  '#EC4899',
-  '#8B5CF6',
-  '#2D4696',
-  '#EF4444',
-  '#6366F1',
-  '#F97316',
+  '#D97706',
+  '#DB2777',
+  '#7C3AED',
+  '#0D9488',
+  '#2563EB',
+  '#EA580C',
+  '#65A30D',
 ];
+
+function getNextCategoryColor(categories) {
+  const list = Array.isArray(categories) ? categories : [];
+  const used = new Set(list.map((c) => String(c?.color || '').toLowerCase()));
+  const available = CATEGORY_COLORS.find((col) => !used.has(col.toLowerCase()));
+  return available || CATEGORY_COLORS[list.length % CATEGORY_COLORS.length];
+}
 
 const LOW_STOCK_THRESHOLD = 5;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
@@ -440,6 +435,7 @@ function renderDynamicRegions() {
       `<button type="button" class="chip ${viewState.activeFilter === 'out' ? 'is-active' : ''}" data-action="filter" data-filter="out">${escapeHtml(t('products.chipOut', { count: outCount }))}</button>`,
       ...categories.map((cat) => {
         const count = countByCat.get(cat.id) || 0;
+        const color = safeColor(cat.color);
         const isActive = viewState.activeFilter === cat.id;
         return `
           <button
@@ -448,7 +444,7 @@ function renderDynamicRegions() {
             data-action="filter"
             data-filter="${escapeHtml(cat.id)}"
           >
-            <span class="chip-cat-icon" aria-hidden="true">${categoryIcon(cat)}</span>
+            <span class="chip-cat-icon has-cat-tint" style="--cat-tint:${color}" aria-hidden="true">${categoryIcon(cat)}</span>
             <span>${escapeHtml(cat.name)} (${count})</span>
           </button>
         `;
@@ -518,17 +514,19 @@ function renderDynamicRegions() {
   const cardsHtml = filtered
     .map((p) => {
       const cat = categoryMap.get(p.categoryId);
+      const catTint = cat ? safeColor(cat.color) : '';
+      const hasPhoto = isSafeDataImage(p.image);
       const catLabel = cat
         ? escapeHtml(cat.name)
         : escapeHtml(t('products.uncategorized'));
-      const thumbHtml = isSafeDataImage(p.image)
+      const thumbHtml = hasPhoto
         ? `<img src="${escapeHtml(p.image)}" alt="${escapeHtml(p.name)}" loading="lazy" />`
         : `<span class="product-cat-icon" aria-hidden="true">${categoryIcon(cat)}</span>`;
 
       return `
         <article class="product-manage-card products-manage-card-wrap ${p.active ? '' : 'is-inactive'}" data-product-id="${escapeHtml(p.id)}">
           <div class="products-manage-top">
-            <div class="product-manage-thumb">${thumbHtml}</div>
+            <div class="product-manage-thumb${!hasPhoto && catTint ? ' has-cat-tint' : ''}"${!hasPhoto && catTint ? ` style="--cat-tint:${catTint}"` : ''}>${thumbHtml}</div>
             <div class="product-manage-info">
               <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                 <span class="products-manage-name" style="font-weight:700; font-size:0.96rem; color:var(--text-primary); word-break:break-word;">${escapeHtml(p.name)}</span>
@@ -536,7 +534,7 @@ function renderDynamicRegions() {
               </div>
               <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:2px;">
                 <span class="badge badge--muted products-manage-cat-badge">
-                  ${categoryIcon(cat, 'badge-cat-icon')}
+                  <span class="badge-cat-icon${catTint ? ' has-cat-tint' : ''}"${catTint ? ` style="--cat-tint:${catTint}"` : ''} aria-hidden="true">${categoryIcon(cat)}</span>
                   <span>${catLabel}</span>
                 </span>
                 <span class="products-manage-sku tabular-nums" style="font-size:0.76rem; color:var(--text-muted);">
@@ -621,9 +619,12 @@ function openProductFormSheet(productId = null) {
   const isEdit = Boolean(existing);
   const categories = store.getCategories();
 
-  let selectedEmoji = existing?.emoji || '📦';
   let uploadedImage = isSafeDataImage(existing?.image) ? existing.image : '';
-  let visualTab = uploadedImage ? 'photo' : 'emoji';
+  let visualTab = uploadedImage ? 'photo' : 'icon';
+
+  const initialCatId = existing?.categoryId || categories[0]?.id || '';
+  const initialCat = categories.find((c) => c.id === initialCatId) || categories[0] || null;
+  const initialCatTint = initialCat ? safeColor(initialCat.color) : '';
 
   const categoryOptionsHtml = categories
     .map((cat) => {
@@ -633,17 +634,6 @@ function openProductFormSheet(productId = null) {
       return `<option value="${escapeHtml(cat.id)}" ${selected ? 'selected' : ''}>${escapeHtml(cat.name)}</option>`;
     })
     .join('');
-
-  const emojiButtonsHtml = PRODUCT_EMOJIS.map(
-    (em) => `
-      <button
-        type="button"
-        class="emoji-option ${em === selectedEmoji ? 'is-selected' : ''}"
-        data-emoji-choice="${escapeHtml(em)}"
-        aria-label="${escapeHtml(t('products.chooseEmojiAria', { em }))}"
-      >${escapeHtml(em)}</button>
-    `
-  ).join('');
 
   const contentHtml = `
     <form id="arupos-product-form" novalidate>
@@ -736,10 +726,10 @@ function openProductFormSheet(productId = null) {
         <div class="seg-control" role="tablist" style="width:100%; margin-bottom:10px;">
           <button
             type="button"
-            class="seg-btn ${visualTab === 'emoji' ? 'is-active' : ''}"
-            data-visual-tab="emoji"
+            class="seg-btn ${visualTab === 'icon' ? 'is-active' : ''}"
+            data-visual-tab="icon"
           >
-            <span data-role="tab-emoji-preview">${escapeHtml(selectedEmoji)}</span>
+            <span data-role="tab-icon-preview" style="display:inline-flex;">${categoryIcon(initialCat)}</span>
             <span>${escapeHtml(t('products.tabEmoji'))}</span>
           </button>
           <button
@@ -752,8 +742,18 @@ function openProductFormSheet(productId = null) {
           </button>
         </div>
 
-        <div data-visual-panel="emoji" ${visualTab === 'emoji' ? '' : 'hidden'}>
-          <div class="emoji-picker-grid">${emojiButtonsHtml}</div>
+        <div data-visual-panel="icon" ${visualTab === 'icon' ? '' : 'hidden'}>
+          <div class="product-visual-auto-preview" data-role="product-auto-icon-preview">
+            <span class="cat-sheet-icon${initialCatTint ? ' has-cat-tint' : ''}"${initialCatTint ? ` style="--cat-tint:${initialCatTint}"` : ''}>
+              ${categoryIcon(initialCat)}
+            </span>
+            <div style="min-width:0;">
+              <div style="font-weight:700; font-size:0.88rem; color:var(--text-primary);" data-role="auto-icon-cat-name">
+                ${escapeHtml(initialCat ? initialCat.name : t('products.uncategorized'))}
+              </div>
+              <div class="field-hint">${escapeHtml(t('products.autoIconNote'))}</div>
+            </div>
+          </div>
         </div>
 
         <div data-visual-panel="photo" ${visualTab === 'photo' ? '' : 'hidden'}>
@@ -848,10 +848,34 @@ function openProductFormSheet(productId = null) {
         sheetEl.querySelectorAll('[data-visual-tab]').forEach((btn) => {
           btn.classList.toggle('is-active', btn.dataset.visualTab === visualTab);
         });
-        const emojiPanel = sheetEl.querySelector('[data-visual-panel="emoji"]');
+        const iconPanel = sheetEl.querySelector('[data-visual-panel="icon"]');
         const photoPanel = sheetEl.querySelector('[data-visual-panel="photo"]');
-        if (emojiPanel) emojiPanel.hidden = visualTab !== 'emoji';
+        if (iconPanel) iconPanel.hidden = visualTab !== 'icon';
         if (photoPanel) photoPanel.hidden = visualTab !== 'photo';
+      };
+
+      const syncCategoryPreview = () => {
+        const selectedCat = categories.find((c) => c.id === catSelect?.value) || categories[0] || null;
+        const tint = selectedCat ? safeColor(selectedCat.color) : '';
+        const tabPreview = sheetEl.querySelector('[data-role="tab-icon-preview"]');
+        if (tabPreview) tabPreview.innerHTML = categoryIcon(selectedCat);
+        const autoBox = sheetEl.querySelector('[data-role="product-auto-icon-preview"]');
+        if (autoBox) {
+          const iconBox = autoBox.querySelector('.cat-sheet-icon');
+          if (iconBox) {
+            iconBox.innerHTML = categoryIcon(selectedCat);
+            iconBox.classList.toggle('has-cat-tint', Boolean(tint));
+            if (tint) {
+              iconBox.style.setProperty('--cat-tint', tint);
+            } else {
+              iconBox.style.removeProperty('--cat-tint');
+            }
+          }
+          const nameEl = autoBox.querySelector('[data-role="auto-icon-cat-name"]');
+          if (nameEl) {
+            nameEl.textContent = selectedCat ? selectedCat.name : t('products.uncategorized');
+          }
+        }
       };
 
       const syncPhotoUI = () => {
@@ -889,6 +913,7 @@ function openProductFormSheet(productId = null) {
 
       nameInput?.addEventListener('input', () => setFieldError('name', ''));
       stockInput?.addEventListener('input', () => setFieldError('stock', ''));
+      catSelect?.addEventListener('change', syncCategoryPreview);
       photoInput?.addEventListener('change', () => handlePhotoFile(photoInput));
       photoInputReplace?.addEventListener('change', () => handlePhotoFile(photoInputReplace));
 
@@ -906,19 +931,8 @@ function openProductFormSheet(productId = null) {
 
         const tabBtn = e.target.closest('[data-visual-tab]');
         if (tabBtn) {
-          visualTab = tabBtn.dataset.visualTab === 'photo' ? 'photo' : 'emoji';
+          visualTab = tabBtn.dataset.visualTab === 'photo' ? 'photo' : 'icon';
           syncVisualTabs();
-          return;
-        }
-
-        const emojiBtn = e.target.closest('[data-emoji-choice]');
-        if (emojiBtn) {
-          selectedEmoji = emojiBtn.dataset.emojiChoice || '📦';
-          sheetEl.querySelectorAll('[data-emoji-choice]').forEach((btn) => {
-            btn.classList.toggle('is-selected', btn === emojiBtn);
-          });
-          const tabPreview = sheetEl.querySelector('[data-role="tab-emoji-preview"]');
-          if (tabPreview) tabPreview.textContent = selectedEmoji;
           return;
         }
 
@@ -971,7 +985,7 @@ function openProductFormSheet(productId = null) {
           stock: clamp(stock, 0, 999999),
           categoryId,
           sku,
-          emoji: selectedEmoji,
+          emoji: existing?.emoji || '📦',
           image: uploadedImage,
           active,
         };
@@ -995,8 +1009,8 @@ function openProductFormSheet(productId = null) {
 
 function openCategoriesSheet() {
   let editingCatId = null;
-  let newEmoji = '🏷️';
-  let newColor = CATEGORY_COLORS[0];
+  let newIcon = 'tag';
+  let newColor = getNextCategoryColor(store.getCategories());
 
   const buildSheetContent = () => {
     const categories = store.getCategories();
@@ -1010,6 +1024,7 @@ function openCategoriesSheet() {
       .map((cat) => {
         const count = countMap.get(cat.id) || 0;
         const color = safeColor(cat.color);
+        const catIconName = getCategoryIconName(cat);
         const isEditing = editingCatId === cat.id;
         const canDelete = categories.length > 1;
 
@@ -1017,7 +1032,7 @@ function openCategoriesSheet() {
           <div class="products-cat-item" data-cat-row="${escapeHtml(cat.id)}">
             <div class="products-cat-item-head">
               <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">
-                <span style="width:40px; height:40px; border-radius:var(--radius-sm); display:grid; place-items:center; flex-shrink:0; background:var(--primary-container); color:var(--on-primary-container); border:1px solid var(--border-subtle);">
+                <span class="cat-sheet-icon has-cat-tint" style="--cat-tint:${color}">
                   ${categoryIcon(cat)}
                 </span>
                 <div style="min-width:0;">
@@ -1062,14 +1077,16 @@ function openCategoriesSheet() {
                       placeholder="${escapeHtml(t('products.catNamePlaceholder'))}"
                       required
                     />
-                    <div class="emoji-picker-grid">
-                      ${CATEGORY_EMOJIS.map(
-                        (em) => `
+                    <div class="icon-picker-grid" role="radiogroup" aria-label="${escapeHtml(t('products.catIconLabel'))}">
+                      ${CATEGORY_ICON_OPTIONS.map(
+                        (iconKey) => `
                           <button
                             type="button"
-                            class="emoji-option ${em === cat.emoji ? 'is-selected' : ''}"
-                            data-edit-emoji="${escapeHtml(em)}"
-                          >${escapeHtml(em)}</button>
+                            class="icon-option ${iconKey === catIconName ? 'is-selected' : ''}"
+                            data-edit-icon="${escapeHtml(iconKey)}"
+                            aria-label="${escapeHtml(t('products.chooseIconAria', { name: iconKey }))}"
+                            aria-checked="${iconKey === catIconName ? 'true' : 'false'}"
+                          >${icon(iconKey)}</button>
                         `
                       ).join('')}
                     </div>
@@ -1120,15 +1137,17 @@ function openCategoriesSheet() {
           />
         </div>
         <div class="field">
-          <label class="field-label">${escapeHtml(t('products.catEmojiLabel'))}</label>
-          <div class="emoji-picker-grid">
-            ${CATEGORY_EMOJIS.map(
-              (em) => `
+          <label class="field-label">${escapeHtml(t('products.catIconLabel'))}</label>
+          <div class="icon-picker-grid" role="radiogroup" aria-label="${escapeHtml(t('products.catIconLabel'))}">
+            ${CATEGORY_ICON_OPTIONS.map(
+              (iconKey) => `
                 <button
                   type="button"
-                  class="emoji-option ${em === newEmoji ? 'is-selected' : ''}"
-                  data-new-emoji="${escapeHtml(em)}"
-                >${escapeHtml(em)}</button>
+                  class="icon-option ${iconKey === newIcon ? 'is-selected' : ''}"
+                  data-new-icon="${escapeHtml(iconKey)}"
+                  aria-label="${escapeHtml(t('products.chooseIconAria', { name: iconKey }))}"
+                  aria-checked="${iconKey === newIcon ? 'true' : 'false'}"
+                >${icon(iconKey)}</button>
               `
             ).join('')}
           </div>
@@ -1169,7 +1188,7 @@ function openCategoriesSheet() {
     size: 'md',
     onMount(sheetEl) {
       const bodySlot = sheetEl.querySelector('[data-role="categories-sheet-body"]');
-      let editDraftEmoji = '';
+      let editDraftIcon = '';
       let editDraftColor = '';
 
       const rerenderBody = () => {
@@ -1184,11 +1203,13 @@ function openCategoriesSheet() {
           return;
         }
 
-        const newEmojiBtn = e.target.closest('[data-new-emoji]');
-        if (newEmojiBtn) {
-          newEmoji = newEmojiBtn.dataset.newEmoji || '🏷️';
-          sheetEl.querySelectorAll('[data-new-emoji]').forEach((b) => {
-            b.classList.toggle('is-selected', b === newEmojiBtn);
+        const newIconBtn = e.target.closest('[data-new-icon]');
+        if (newIconBtn) {
+          newIcon = newIconBtn.dataset.newIcon || 'tag';
+          sheetEl.querySelectorAll('[data-new-icon]').forEach((b) => {
+            const active = b === newIconBtn;
+            b.classList.toggle('is-selected', active);
+            b.setAttribute('aria-checked', active ? 'true' : 'false');
           });
           return;
         }
@@ -1204,12 +1225,14 @@ function openCategoriesSheet() {
           return;
         }
 
-        const editEmojiBtn = e.target.closest('[data-edit-emoji]');
-        if (editEmojiBtn) {
-          editDraftEmoji = editEmojiBtn.dataset.editEmoji || '🏷️';
-          const form = editEmojiBtn.closest('form');
-          form?.querySelectorAll('[data-edit-emoji]').forEach((b) => {
-            b.classList.toggle('is-selected', b === editEmojiBtn);
+        const editIconBtn = e.target.closest('[data-edit-icon]');
+        if (editIconBtn) {
+          editDraftIcon = editIconBtn.dataset.editIcon || 'tag';
+          const form = editIconBtn.closest('form');
+          form?.querySelectorAll('[data-edit-icon]').forEach((b) => {
+            const active = b === editIconBtn;
+            b.classList.toggle('is-selected', active);
+            b.setAttribute('aria-checked', active ? 'true' : 'false');
           });
           return;
         }
@@ -1235,12 +1258,12 @@ function openCategoriesSheet() {
         if (action === 'toggle-edit') {
           if (editingCatId === catId) {
             editingCatId = null;
-            editDraftEmoji = '';
+            editDraftIcon = '';
             editDraftColor = '';
           } else {
             const target = store.getCategories().find((c) => c.id === catId);
             editingCatId = catId;
-            editDraftEmoji = target?.emoji || '🏷️';
+            editDraftIcon = getCategoryIconName(target);
             editDraftColor = target?.color || CATEGORY_COLORS[0];
           }
           rerenderBody();
@@ -1249,7 +1272,7 @@ function openCategoriesSheet() {
 
         if (action === 'cancel-edit') {
           editingCatId = null;
-          editDraftEmoji = '';
+          editDraftIcon = '';
           editDraftColor = '';
           rerenderBody();
           return;
@@ -1311,7 +1334,7 @@ function openCategoriesSheet() {
           try {
             store.updateCategory(catId, {
               name,
-              emoji: editDraftEmoji || undefined,
+              icon: editDraftIcon || undefined,
               color: editDraftColor || undefined,
             });
             editingCatId = null;
@@ -1335,11 +1358,11 @@ function openCategoriesSheet() {
           try {
             store.addCategory({
               name,
-              emoji: newEmoji,
+              icon: newIcon,
               color: newColor,
             });
-            newEmoji = '🏷️';
-            newColor = CATEGORY_COLORS[0];
+            newIcon = 'tag';
+            newColor = getNextCategoryColor(store.getCategories());
             rerenderBody();
             toast(t('products.catAddedToast', { name }), 'success');
           } catch (err) {

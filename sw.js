@@ -1,4 +1,4 @@
-const CACHE_NAME = 'arupos-v1-cache-20';
+const CACHE_NAME = 'arupos-v1-cache-21';
 
 const APP_SHELL_ASSETS = [
   './',
